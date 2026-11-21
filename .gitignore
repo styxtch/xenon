@@ -1,0 +1,39 @@
+# Dependencies & Frontend Build
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Rust & Tauri Build Artifacts
+src-tauri/target/
+src-tauri/gen/
+**/*.rs.bk
+
+# Transient Runtime & Crash Recovery Artifacts
+*.part
+*.log
+*.sqlite
+*.db
+*.db-shm
+*.db-wal
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Internal Documentation
+Docs/
+docs/
+
+# Environment & Local Secrets
+.env
+.env.*
+*.p12
+*.pfx
+*.pem
+*.key

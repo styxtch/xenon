@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-21T05:01:56.839Z",
+  "algorithm": "sha256",
+  "files": {
+    "gs-x86_64-pc-windows-msvc.exe": {
+      "category": "sidecar",
+      "bytes": 93696,
+      "sha256": "3741f8883c0d4ea8a75c44db982be966aeca72d966e92f1d8921cc917654d3df"
+    },
+    "qpdf-x86_64-pc-windows-msvc.exe": {
+      "category": "sidecar",
+      "bytes": 19456,
+      "sha256": "1bdaf878f37eaffea1ea3c30591214c77636a0f2fc7432427516b6e22e36c0ff"
+    },
+    "concrt140.dll": {
+      "category": "library",
+      "bytes": 374200,
+      "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e"
+    },
+    "gsdll64.dll": {
+      "category": "library",
+      "bytes": 24191488,
+      "sha256": "882ea1cb05549e65312ac715f399e484431650c50abb5785138935814646af9c"
+    },
+    "msvcp140.dll": {
+      "category": "library",
+      "bytes": 643512,
+      "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+    },
+    "msvcp140_1.dll": {
+      "category": "library",
+      "bytes": 35768,
+      "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982"
+    },
+    "msvcp140_2.dll": {
+      "category": "library",
+      "bytes": 274872,
+      "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838"
+    },
+    "msvcp140_atomic_wait.dll": {
+      "category": "library",
+      "bytes": 57792,
+      "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b"
+    },
+    "msvcp140_codecvt_ids.dll": {
+      "category": "library",
+      "bytes": 31160,
+      "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78"
+    },
+    "pdfium.dll": {
+      "category": "library",
+      "bytes": 7846912,
+      "sha256": "31d249b8535dd5f351ae7f4b714dc4bb1d76b6069b321a309bc99271dd65f566"
+    },
+    "qpdf30.dll": {
+      "category": "library",
+      "bytes": 7448064,
+      "sha256": "8812952678de93e0750308a113aa650e9161af466f9770679ea9673adeb61041"
+    },
+    "vcruntime140.dll": {
+      "category": "library",
+      "bytes": 178616,
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    "vcruntime140_1.dll": {
+      "category": "library",
+      "bytes": 50112,
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    },
+    "eng.traineddata": {
+      "category": "tessdata",
+      "bytes": 4113088,
+      "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
+    },
+    "ind.traineddata": {
+      "category": "tessdata",
+      "bytes": 1122661,
+      "sha256": "69786901da87ab8766c1ea7fbb10b28f2110c14da3f6c8f2735df131fba95d88"
+    }
+  }
+}
