@@ -3,13 +3,16 @@ use crate::db::history_repo;
 use crate::db::settings_repo;
 use crate::db::DatabaseState;
 use crate::engines::lopdf_crypto::{self, FormFieldSpec, SecurityExecutionResult};
+use crate::engines::pdfium_engine;
 use crate::error::AppError;
 use std::path::PathBuf;
 use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub fn get_form_fields(input_path: String) -> Result<Vec<FormFieldSpec>, AppError> {
-    lopdf_crypto::get_pdf_form_fields(&PathBuf::from(input_path))
+    let in_buf = PathBuf::from(&input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
+    lopdf_crypto::get_pdf_form_fields(&in_buf)
 }
 
 #[tauri::command]
@@ -26,6 +29,7 @@ pub fn save_form_fields(
     let cache_dir = PathBuf::from(&settings.temp_cache_dir);
 
     let in_buf = PathBuf::from(&input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     let out_buf = PathBuf::from(&output_path);
     let res = lopdf_crypto::save_pdf_form_fields(
         &in_buf,

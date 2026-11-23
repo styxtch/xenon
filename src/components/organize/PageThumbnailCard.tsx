@@ -153,9 +153,44 @@ export const PageThumbnailCardContent: React.FC<PageThumbnailCardContentProps> =
           </div>
         )}
 
-        {page.cropBox && (
-          <div className="absolute inset-2 border border-dashed border-tag-convert/80 rounded pointer-events-none" />
-        )}
+        {page.cropBox && (() => {
+          const [x0, y0, x1, y1] = page.cropBox;
+          const pageW = page.widthPts || 595.28;
+          const pageH = page.heightPts || 841.89;
+          const leftPct = Math.max(0, Math.min(90, (x0 / pageW) * 100));
+          const rightPct = Math.max(0, Math.min(90, ((pageW - x1) / pageW) * 100));
+          const bottomPct = Math.max(0, Math.min(90, (y0 / pageH) * 100));
+          const topPct = Math.max(0, Math.min(90, ((pageH - y1) / pageH) * 100));
+          return (
+            <>
+              <div
+                className="absolute top-0 left-0 right-0 bg-black/55 pointer-events-none"
+                style={{ height: `${topPct}%` }}
+              />
+              <div
+                className="absolute bottom-0 left-0 right-0 bg-black/55 pointer-events-none"
+                style={{ height: `${bottomPct}%` }}
+              />
+              <div
+                className="absolute left-0 bg-black/55 pointer-events-none"
+                style={{ top: `${topPct}%`, bottom: `${bottomPct}%`, width: `${leftPct}%` }}
+              />
+              <div
+                className="absolute right-0 bg-black/55 pointer-events-none"
+                style={{ top: `${topPct}%`, bottom: `${bottomPct}%`, width: `${rightPct}%` }}
+              />
+              <div
+                className="absolute border-2 border-dashed border-tag-convert pointer-events-none"
+                style={{
+                  top: `${topPct}%`,
+                  bottom: `${bottomPct}%`,
+                  left: `${leftPct}%`,
+                  right: `${rightPct}%`,
+                }}
+              />
+            </>
+          );
+        })()}
       </div>
 
       {/* Hover Quick Actions Overlay */}

@@ -26,6 +26,10 @@ pub struct PageReorderSpec {
     pub crop_box: Option<[f32; 4]>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizeOptions {
@@ -33,6 +37,8 @@ pub struct OrganizeOptions {
     pub retain_bookmarks_toc: bool,
     pub standardize_to_a4: bool,
     pub pdf_version_profile: String,
+    #[serde(default = "default_true")]
+    pub preserve_password: bool,
     pub output_path: String,
 }
 
@@ -242,6 +248,7 @@ pub fn execute_organize(
 
     let mut original_bytes_map: HashMap<String, u64> = HashMap::new();
     let mut first_source_mtime: Option<std::time::SystemTime> = None;
+    let mut source_password: Option<String> = None;
     let mut cmd_segments: Vec<String> = Vec::new();
     let mut cloned_maps: HashMap<String, HashMap<ObjectId, ObjectId>> = HashMap::new();
 
@@ -253,6 +260,12 @@ pub fn execute_organize(
             ))
         })?;
         let guard = handle.lock();
+
+        if source_password.is_none() {
+            if let Some(pwd) = guard.password.as_ref().filter(|s| !s.is_empty()) {
+                source_password = Some(pwd.clone());
+            }
+        }
 
         if !original_bytes_map.contains_key(&spec.source_doc_id) {
             if let Ok(meta) = std::fs::metadata(&guard.file_path) {
@@ -313,16 +326,55 @@ pub fn execute_organize(
     dst_doc.trailer.set("Root", catalog_id);
 
     let output_path = PathBuf::from(&options.output_path);
-    let output_bytes = write_pdf_atomically(
-        &mut dst_doc,
-        temp_cache_dir,
-        &output_path,
-        if preserve_timestamp {
-            first_source_mtime
+    let output_bytes = if options.preserve_password {
+        if let Some(pwd) = source_password.as_deref() {
+            let temp_plain = temp_cache_dir.join(format!("org_plain_{}.pdf", Uuid::new_v4()));
+            write_pdf_atomically(&mut dst_doc, temp_cache_dir, &temp_plain, None)?;
+            let enc_spec = EncryptionSpec {
+                level: "aes-256".to_string(),
+                user_password: Some(pwd.to_string()),
+                owner_password: Some(pwd.to_string()),
+                allow_print: true,
+                allow_copy: true,
+                allow_modify: true,
+                allow_form_fill: true,
+            };
+            let enc_res =
+                encrypt_pdf_aes(paths, &temp_plain, &output_path, &enc_spec, temp_cache_dir);
+            let _ = std::fs::remove_file(&temp_plain);
+            let enc_res = enc_res?;
+            if preserve_timestamp {
+                if let Some(mtime) = first_source_mtime {
+                    if let Ok(file) = std::fs::File::options().write(true).open(&output_path) {
+                        let _ = file.set_times(std::fs::FileTimes::new().set_modified(mtime));
+                    }
+                }
+            }
+            enc_res.output_bytes
         } else {
-            None
-        },
-    )?;
+            write_pdf_atomically(
+                &mut dst_doc,
+                temp_cache_dir,
+                &output_path,
+                if preserve_timestamp {
+                    first_source_mtime
+                } else {
+                    None
+                },
+            )?
+        }
+    } else {
+        write_pdf_atomically(
+            &mut dst_doc,
+            temp_cache_dir,
+            &output_path,
+            if preserve_timestamp {
+                first_source_mtime
+            } else {
+                None
+            },
+        )?
+    };
 
     let original_bytes: u64 = original_bytes_map.values().sum();
     let qpdf_command = format!(
@@ -430,6 +482,7 @@ pub fn execute_split(
             retain_bookmarks_toc: true,
             standardize_to_a4: false,
             pdf_version_profile: "1.7".to_string(),
+            preserve_password: true,
             output_path: out_path.to_string_lossy().to_string(),
         };
         results.push(execute_organize(
@@ -918,6 +971,7 @@ mod tests {
             retain_bookmarks_toc: true,
             standardize_to_a4: true,
             pdf_version_profile: "1.7".to_string(),
+            preserve_password: true,
             output_path: out_file.to_string_lossy().to_string(),
         };
 
@@ -1037,6 +1091,21 @@ mod tests {
         assert_eq!(unlocked.page_count, 12);
         assert!(unlocked.is_encrypted);
 
+        // Guard rejects encrypted PDF and export_pdf_to_images writes 0 blank files
+        let guard_err = crate::engines::pdfium_engine::ensure_pdf_unlocked(&encrypted_out)
+            .expect_err("encrypted PDF must be rejected by guard");
+        assert!(guard_err.to_string().contains("Unlock PDF"));
+        let img_out_dir = dir.path().join("encrypted_imgs");
+        let img_res = crate::engines::pdfium_engine::export_pdf_to_images(
+            &encrypted_out,
+            "png",
+            150,
+            None,
+            &img_out_dir,
+        );
+        assert!(img_res.is_err());
+        assert!(!img_out_dir.exists() || std::fs::read_dir(&img_out_dir).map(|mut d| d.next().is_none()).unwrap_or(true));
+
         let decrypted_out = dir.path().join("decrypted.pdf");
         decrypt_pdf_password(&paths, &encrypted_out, "xenon2026", &decrypted_out, &cache)
             .expect("decrypt pdf");
@@ -1045,5 +1114,67 @@ mod tests {
             .open_document(&decrypted_out, None)
             .expect("open decrypted pdf without password");
         assert!(!plain.is_encrypted);
+
+        // Organize with preserve_password=true keeps encryption intact
+        let re_opened = registry
+            .open_document(&encrypted_out, Some("xenon2026"))
+            .expect("reload encrypted for organize");
+        let kept_out = dir.path().join("organized_kept.pdf");
+        execute_organize(
+            &registry,
+            &paths,
+            &OrganizeOptions {
+                pages: vec![PageReorderSpec {
+                    source_doc_id: re_opened.doc_id.clone(),
+                    original_page_number: 1,
+                    rotation_delta: 90,
+                    crop_box: None,
+                }],
+                retain_bookmarks_toc: true,
+                standardize_to_a4: false,
+                pdf_version_profile: "1.7".to_string(),
+                preserve_password: true,
+                output_path: kept_out.to_string_lossy().to_string(),
+            },
+            &cache,
+            false,
+        )
+        .expect("organize with password kept");
+        assert!(matches!(
+            registry.open_document(&kept_out, None),
+            Err(AppError::PasswordRequired)
+        ));
+        let reopened_kept = registry
+            .open_document(&kept_out, Some("xenon2026"))
+            .expect("open organized pdf with original password");
+        assert!(reopened_kept.is_encrypted);
+        assert_eq!(reopened_kept.pages[0].rotation, 90);
+
+        // Organize with preserve_password=false exports unlocked
+        let stripped_out = dir.path().join("organized_unlocked.pdf");
+        execute_organize(
+            &registry,
+            &paths,
+            &OrganizeOptions {
+                pages: vec![PageReorderSpec {
+                    source_doc_id: re_opened.doc_id,
+                    original_page_number: 1,
+                    rotation_delta: 0,
+                    crop_box: None,
+                }],
+                retain_bookmarks_toc: true,
+                standardize_to_a4: false,
+                pdf_version_profile: "1.7".to_string(),
+                preserve_password: false,
+                output_path: stripped_out.to_string_lossy().to_string(),
+            },
+            &cache,
+            false,
+        )
+        .expect("organize unlocked");
+        let reopened_stripped = registry
+            .open_document(&stripped_out, None)
+            .expect("open unlocked organized pdf without password");
+        assert!(!reopened_stripped.is_encrypted);
     }
 }

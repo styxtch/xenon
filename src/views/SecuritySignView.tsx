@@ -114,6 +114,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
   const setToolFiles = useToolFilesStore((s) => s.setToolFiles);
   const clearToolFiles = useToolFilesStore((s) => s.clearToolFiles);
   const markToolFileImported = useToolFilesStore((s) => s.markToolFileImported);
+  const isImporting = useImportProgressStore((s) => s.isImporting);
   const setSecurityPdfPath = (path: string) => setToolFiles(toolKey, [path]);
   const clearSecurityPdfPath = () => clearToolFiles(toolKey);
 
@@ -144,14 +145,35 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
       return;
     }
     const sig = toolFileSig(toolKey, securityPdfPath);
-    const cached = useToolFilesStore.getState().previewMetaBySig[sig];
-    if (cached) {
-      setPreviewDocId(cached.docId);
-      setPreviewPageCount(cached.pageCount);
+    const storeState = useToolFilesStore.getState();
+    const cached = storeState.previewMetaBySig[sig];
+    const alreadyImported = Boolean(storeState.importedSignatures[sig]);
+    if (cached || alreadyImported) {
+      setPreviewDocId(cached?.docId ?? "");
+      setPreviewPageCount(cached?.pageCount ?? 1);
       return;
     }
     let cancelled = false;
     const fileName = securityPdfPath.split(/[\\/]/).pop() ?? "Document.pdf";
+    if (subTab === "unlock") {
+      useImportProgressStore
+        .getState()
+        .startImport("Inspecting encrypted PDF...", fileName, 1);
+      void (async () => {
+        await useImportProgressStore.getState().finishImportAsync();
+        if (!cancelled) {
+          markToolFileImported(toolKey, securityPdfPath);
+          setPreviewDocId("");
+          setPreviewPageCount(1);
+          setPreviewPageDims([]);
+        }
+      })();
+      return () => {
+        cancelled = true;
+        useImportProgressStore.getState().cancelImport();
+      };
+    }
+
     useImportProgressStore
       .getState()
       .startImport("Loading PDF security metadata...", fileName, 1);
@@ -175,8 +197,9 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
           );
         }
       } catch {
-        useImportProgressStore.getState().cancelImport();
+        await useImportProgressStore.getState().finishImportAsync();
         if (!cancelled) {
+          markToolFileImported(toolKey, securityPdfPath);
           setPreviewDocId("");
           setPreviewPageCount(1);
           setPreviewPageDims([]);
@@ -187,7 +210,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
       cancelled = true;
       useImportProgressStore.getState().cancelImport();
     };
-  }, [securityPdfPath, toolKey, markToolFileImported]);
+  }, [securityPdfPath, toolKey, subTab, markToolFileImported]);
 
   const watermarkTileUrl = previewDocId
     ? getXenonTileUrl(previewDocId, 1, 560, 0)
@@ -726,17 +749,6 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
         </div>
       </div>
 
-      {resultMessage && (
-        <div className="p-3 rounded-xl bg-status-success/10 border border-status-success/30 font-body-sm text-body-sm text-status-success break-words">
-          {resultMessage}
-        </div>
-      )}
-      {errorMessage && (
-        <div className="p-3 rounded-xl bg-error-container/40 border border-status-danger/40 font-body-sm text-body-sm text-error break-words">
-          {errorMessage}
-        </div>
-      )}
-
       {subTab === "redact" ? (
         <div className="flex flex-col gap-space-md">
           <InlineImportProgress />
@@ -754,6 +766,8 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                 isProcessing={isExecuting}
                 processingPercent={processingPercent}
                 processingLabel="Burning 300 DPI redactions..."
+                resultMessage={resultMessage}
+                errorMessage={errorMessage}
               >
                 <button
                   type="button"
@@ -875,7 +889,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
               </div>
             ) : (
               <div className="bg-surface-card border border-border-default rounded-xl p-space-xl flex flex-col gap-space-md">
-                {!securityPdfPath && (
+                {(!securityPdfPath || isImporting) && (
                   <DropZoneWell
                     title="Drag & drop a PDF (or .p12/.pfx cert) here, or click to select"
                     subtitle="Drag & drop from Windows Explorer or click to browse a PDF document or .p12/.pfx certificate."
@@ -883,28 +897,28 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                     accentClass="text-tag-security"
                   />
                 )}
-                <InlineImportProgress />
-                {securityPdfPath ? (
-                  <div className="p-3 rounded-lg bg-surface-elevated border border-border-subtle flex items-center justify-between gap-2">
-                    <span className="font-mono-metric text-caption text-text-secondary truncate">
-                      Target Path: {securityPdfPath}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleClearPdf}
-                      title="Remove PDF"
-                      className="p-1 rounded hover:bg-surface-card text-text-muted hover:text-error shrink-0 transition-colors"
-                    >
-                      <AppIcon name="close" className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-lg bg-surface-elevated/50 border border-border-subtle font-caption text-caption text-text-muted">
-                    No PDF selected — drag &amp; drop a PDF above or click Select PDF.
-                  </div>
-                )}
+                {!isImporting &&
+                  (securityPdfPath ? (
+                    <div className="p-3 rounded-lg bg-surface-elevated border border-border-subtle flex items-center justify-between gap-2">
+                      <span className="font-mono-metric text-caption text-text-secondary truncate">
+                        Target Path: {securityPdfPath}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearPdf}
+                        title="Remove PDF"
+                        className="p-1 rounded hover:bg-surface-card text-text-muted hover:text-error shrink-0 transition-colors"
+                      >
+                        <AppIcon name="close" className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-lg bg-surface-elevated/50 border border-border-subtle font-caption text-caption text-text-muted">
+                      No PDF selected — drag &amp; drop a PDF above or click Select PDF.
+                    </div>
+                  ))}
 
-                {(subTab === "sign" || subTab === "vsign") && previewDocId && (
+                {!isImporting && (subTab === "sign" || subTab === "vsign") && previewDocId && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <span className="font-caption text-caption text-text-muted uppercase tracking-wider">
@@ -1122,6 +1136,8 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                   isProcessing={isExecuting}
                   processingPercent={processingPercent}
                   processingLabel="Encrypting PDF via QPDF..."
+                  resultMessage={resultMessage}
+                  errorMessage={errorMessage}
                 >
                   <button
                     type="submit"
@@ -1170,6 +1186,8 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                   isProcessing={isExecuting}
                   processingPercent={processingPercent}
                   processingLabel="Decrypting PDF via QPDF..."
+                  resultMessage={resultMessage}
+                  errorMessage={errorMessage}
                 >
                   <button
                     type="submit"
@@ -1295,6 +1313,8 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                   isProcessing={isExecuting}
                   processingPercent={processingPercent}
                   processingLabel="Stamping PNG/JPG signature..."
+                  resultMessage={resultMessage}
+                  errorMessage={errorMessage}
                 >
                   <button
                     type="button"
@@ -1351,6 +1371,8 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                   isProcessing={isExecuting}
                   processingPercent={processingPercent}
                   processingLabel="Signing PDF with PKCS#12 CMS..."
+                  resultMessage={resultMessage}
+                  errorMessage={errorMessage}
                 >
                   <button
                     type="button"
@@ -1404,6 +1426,8 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                   isProcessing={isExecuting}
                   processingPercent={processingPercent}
                   processingLabel="Applying watermark / flattening..."
+                  resultMessage={resultMessage}
+                  errorMessage={errorMessage}
                 >
                   <div className="flex flex-col gap-2">
                     <button

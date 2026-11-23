@@ -28,6 +28,7 @@ pub fn encrypt_pdf(
     let paths = EnginePaths::resolve(resource_dir.as_deref());
 
     let in_buf = PathBuf::from(&options.input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     let out_buf = PathBuf::from(&options.output_path);
     let res = qpdf_engine::encrypt_pdf_aes(&paths, &in_buf, &out_buf, &enc, &cache_dir)?;
 
@@ -150,6 +151,7 @@ pub fn sign_pdf_pkcs12(
     let cache_dir = PathBuf::from(&settings.temp_cache_dir);
 
     let in_buf = PathBuf::from(&options.input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     let out_buf = PathBuf::from(&options.output_path);
 
     let mut temp_stamped_path: Option<PathBuf> = None;
@@ -218,6 +220,7 @@ pub fn apply_watermark(
     let cache_dir = PathBuf::from(&settings.temp_cache_dir);
 
     let in_buf = PathBuf::from(&options.input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     let out_buf = PathBuf::from(&options.output_path);
     let res = lopdf_crypto::apply_watermark_to_pdf(
         &in_buf,
@@ -266,6 +269,7 @@ pub fn flatten_pdf(
     let cache_dir = PathBuf::from(&settings.temp_cache_dir);
 
     let in_buf = PathBuf::from(&input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     let out_buf = PathBuf::from(&output_path);
     let res = lopdf_crypto::flatten_pdf_annotations(&in_buf, &out_buf, &cache_dir)?;
 
@@ -305,6 +309,7 @@ pub fn true_redact(
     let cache_dir = PathBuf::from(&settings.temp_cache_dir);
 
     let in_buf = PathBuf::from(&options.input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     let out_buf = PathBuf::from(&options.output_path);
     let res = pdfium_engine::execute_true_redaction(
         &in_buf,
@@ -344,8 +349,10 @@ pub fn find_text_redaction_boxes(
     case_sensitive: bool,
     fill_color_hex: String,
 ) -> Result<Vec<lopdf_crypto::RedactionBox>, AppError> {
+    let in_buf = PathBuf::from(&input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     pdfium_engine::find_text_redaction_boxes(
-        &PathBuf::from(&input_path),
+        &in_buf,
         &query,
         &mode,
         case_sensitive,
@@ -371,6 +378,7 @@ pub fn stamp_visual_signature(
     let cache_dir = PathBuf::from(&settings.temp_cache_dir);
 
     let in_buf = PathBuf::from(&input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     let out_buf = PathBuf::from(&output_path);
     let img_buf = PathBuf::from(&image_path);
 

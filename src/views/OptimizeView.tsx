@@ -114,7 +114,7 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
   }, [toolKey, addToolFiles]);
 
   useEffect(() => {
-    if (subTab !== "compress" || !primaryPath) {
+    if (!primaryPath) {
       setEstimate(null);
       return;
     }
@@ -124,6 +124,32 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
     const alreadyImported = Boolean(
       useToolFilesStore.getState().importedSignatures[sig]
     );
+
+    if (subTab !== "compress") {
+      setEstimate(null);
+      if (!alreadyImported) {
+        const stageLabel =
+          subTab === "repair"
+            ? "Inspecting PDF structure..."
+            : subTab === "sanitize"
+              ? "Scanning PDF metadata..."
+              : "Preparing PDF for linearization...";
+        useImportProgressStore.getState().startImport(stageLabel, fileName, 1);
+        void (async () => {
+          await useImportProgressStore.getState().finishImportAsync();
+          if (!cancelled) {
+            markToolFileImported(toolKey, primaryPath);
+          }
+        })();
+      }
+      return () => {
+        cancelled = true;
+        if (!alreadyImported) {
+          useImportProgressStore.getState().cancelImport();
+        }
+      };
+    }
+
     if (!alreadyImported) {
       useImportProgressStore
         .getState()
@@ -146,9 +172,12 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
         }
       } catch {
         if (!alreadyImported) {
-          useImportProgressStore.getState().cancelImport();
+          await useImportProgressStore.getState().finishImportAsync();
         }
-        if (!cancelled) setEstimate(null);
+        if (!cancelled) {
+          markToolFileImported(toolKey, primaryPath);
+          setEstimate(null);
+        }
       }
     })();
     return () => {

@@ -25,7 +25,7 @@ export interface GridPageItem {
   selected: boolean;
 }
 
-export type OrganizeSubTab = "grid" | "merge" | "split" | "crop";
+export type OrganizeSubTab = "grid" | "merge" | "split";
 export type SplitMode = "range" | "extract_selected" | "every_n_pages" | "burst";
 
 interface DocumentState {
@@ -54,6 +54,7 @@ interface DocumentState {
   retainBookmarksToc: boolean;
   standardizeToA4: boolean;
   pdfVersionProfile: "1.7" | "2.0" | "pdfa-2b";
+  preservePassword: boolean;
   splitMode: SplitMode;
   splitRangeSpec: string;
   splitEveryN: number;
@@ -106,6 +107,7 @@ interface DocumentState {
   setRetainBookmarksToc: (val: boolean) => void;
   setStandardizeToA4: (val: boolean) => void;
   setPdfVersionProfile: (val: "1.7" | "2.0" | "pdfa-2b") => void;
+  setPreservePassword: (val: boolean) => void;
   setSplitMode: (mode: SplitMode) => void;
   setSplitRangeSpec: (spec: string) => void;
   setSplitEveryN: (n: number) => void;
@@ -180,6 +182,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   retainBookmarksToc: true,
   standardizeToA4: false,
   pdfVersionProfile: "1.7",
+  preservePassword: true,
   splitMode: "range",
   splitRangeSpec: "1-4, 5-8",
   splitEveryN: 3,
@@ -229,6 +232,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       lastSelectedPageId: null,
       undoStack: [],
       redoStack: [],
+      preservePassword: true,
       outputFilename: "",
       lastResultMessage: null,
       lastError: null,
@@ -241,6 +245,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       .startImport("Opening PDF document...", fileName, 1);
     try {
       const dto = await tauriClient.openPdf(path, password);
+      set({
+        isPasswordModalOpen: false,
+        pendingProtectedPath: null,
+        passwordError: null,
+      });
       await useImportProgressStore.getState().finishImportAsync();
       const pages = dtoToGridPages(dto, false);
       set((state) => ({
@@ -254,6 +263,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         lastSelectedPageId: null,
         undoStack: [],
         redoStack: [],
+        preservePassword: true,
         outputFilename: dto.fileName.replace(/\.pdf$/i, "_organized.pdf"),
         isPasswordModalOpen: false,
         pendingProtectedPath: null,
@@ -640,13 +650,16 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     }),
 
   resetCropOnSelected: () =>
-    set((state) => ({
-      undoStack: [...state.undoStack.slice(-29), state.pages],
-      redoStack: [],
-      pages: state.pages.map((p) =>
-        p.selected ? { ...p, cropBox: undefined } : p
-      ),
-    })),
+    set((state) => {
+      const hasSel = state.pages.some((p) => p.selected);
+      return {
+        undoStack: [...state.undoStack.slice(-29), state.pages],
+        redoStack: [],
+        pages: state.pages.map((p) =>
+          !hasSel || p.selected ? { ...p, cropBox: undefined } : p
+        ),
+      };
+    }),
 
   undo: () =>
     set((state) => {
@@ -673,6 +686,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   setRetainBookmarksToc: (retainBookmarksToc) => set({ retainBookmarksToc }),
   setStandardizeToA4: (standardizeToA4) => set({ standardizeToA4 }),
   setPdfVersionProfile: (pdfVersionProfile) => set({ pdfVersionProfile }),
+  setPreservePassword: (preservePassword) => set({ preservePassword }),
   setSplitMode: (splitMode) => set({ splitMode }),
   setSplitRangeSpec: (splitRangeSpec) => set({ splitRangeSpec }),
   setSplitEveryN: (splitEveryN) => set({ splitEveryN: Math.max(1, splitEveryN) }),
@@ -696,8 +710,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   executeActiveOperation: async (subTab, outputDir, namingPattern) => {
     const state = get();
-    const safeOutDir = outputDir || "Exports";
-    const sep = safeOutDir.includes("\\") ? "\\" : "/";
+    const safeOutDir = (outputDir || "Exports").replace(/[\\/]+$/, "");
+    const sep = safeOutDir.includes("\\") || safeOutDir.endsWith(":") ? "\\" : "/";
     const rawName = state.outputFilename.trim() || "XENON_organized.pdf";
     const needsPdfExt = subTab !== "split" || state.mergeExtractedIntoSinglePdf;
     const cleanName =
@@ -797,6 +811,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
               retainBookmarksToc: state.retainBookmarksToc,
               standardizeToA4: state.standardizeToA4,
               pdfVersionProfile: state.pdfVersionProfile,
+              preservePassword: state.preservePassword,
               outputPath: outPath,
             }),
           updateTicks

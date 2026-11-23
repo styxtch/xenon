@@ -1354,6 +1354,39 @@ fn obj_as_f32(obj: &Object) -> f32 {
     }
 }
 
+pub fn ensure_pdf_unlocked(path: &Path) -> Result<(), AppError> {
+    if !path.exists() {
+        return Err(AppError::InvalidInput(format!(
+            "PDF file not found: {}",
+            path.display()
+        )));
+    }
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Document.pdf");
+    let locked_err = || {
+        AppError::InvalidInput(format!(
+            "'{name}' is password-protected. Please unlock it first in Security & Sign → Unlock PDF."
+        ))
+    };
+    match Document::load(path) {
+        Ok(doc) if doc.is_encrypted() => Err(locked_err()),
+        Err(err) => {
+            let lower = err.to_string().to_ascii_lowercase();
+            if lower.contains("encrypt")
+                || lower.contains("decrypt")
+                || lower.contains("password")
+            {
+                Err(locked_err())
+            } else {
+                Ok(())
+            }
+        }
+        Ok(_) => Ok(()),
+    }
+}
+
 pub fn export_pdf_to_images(
     input_path: &Path,
     format: &str,
@@ -1372,12 +1405,7 @@ pub fn export_pdf_to_images_with_prefix(
     output_dir: &Path,
     filename_prefix: Option<&str>,
 ) -> Result<Vec<String>, AppError> {
-    if !input_path.exists() {
-        return Err(AppError::InvalidInput(format!(
-            "PDF file not found: {}",
-            input_path.display()
-        )));
-    }
+    ensure_pdf_unlocked(input_path)?;
     std::fs::create_dir_all(output_dir)?;
 
     let doc = Document::load(input_path)

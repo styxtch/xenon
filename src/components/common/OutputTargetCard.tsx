@@ -48,6 +48,8 @@ interface OutputTargetCardProps {
   processingPercent?: number;
   outputFolder?: string;
   onChangeOutputFolder?: (dir: string) => void;
+  resultMessage?: string | null;
+  errorMessage?: string | null;
   children?: React.ReactNode;
 }
 
@@ -64,6 +66,8 @@ export const OutputTargetCard: React.FC<OutputTargetCardProps> = ({
   processingPercent,
   outputFolder,
   onChangeOutputFolder,
+  resultMessage,
+  errorMessage,
   children,
 }) => {
   const primaryDestinationFolder = useSettingsStore(
@@ -171,6 +175,17 @@ export const OutputTargetCard: React.FC<OutputTargetCardProps> = ({
                 }
               />
             </div>
+          </div>
+        )}
+
+        {resultMessage && (
+          <div className="p-2.5 rounded-lg bg-status-success/10 border border-status-success/30 font-caption text-caption text-status-success break-words">
+            {resultMessage}
+          </div>
+        )}
+        {errorMessage && (
+          <div className="p-2.5 rounded-lg bg-error-container/40 border border-status-danger/40 font-caption text-caption text-error break-words">
+            {errorMessage}
           </div>
         )}
 

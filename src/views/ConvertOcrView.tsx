@@ -84,6 +84,7 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
   const compareLeftPath = useToolFilesStore((s) => s.compareLeftPath);
   const compareRightPath = useToolFilesStore((s) => s.compareRightPath);
   const clearComparePaths = useToolFilesStore((s) => s.clearComparePaths);
+  const isImporting = useImportProgressStore((s) => s.isImporting);
 
   const setConvertPdfPath = (path: string) => setToolFiles(pdfToolKey, [path]);
   const clearConvertPdfPath = () => clearToolFiles(pdfToolKey);
@@ -118,10 +119,12 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
       return;
     }
     const sig = toolFileSig(pdfToolKey, convertPdfPath);
-    const cached = useToolFilesStore.getState().previewMetaBySig[sig];
-    if (cached) {
-      setPreviewDocId(cached.docId);
-      setPreviewPageCount(cached.pageCount);
+    const storeState = useToolFilesStore.getState();
+    const cached = storeState.previewMetaBySig[sig];
+    const alreadyImported = Boolean(storeState.importedSignatures[sig]);
+    if (cached || alreadyImported) {
+      setPreviewDocId(cached?.docId ?? "");
+      setPreviewPageCount(cached?.pageCount ?? 0);
       setPreviewPage(1);
       return;
     }
@@ -144,8 +147,9 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
           setPreviewPage(1);
         }
       } catch {
-        useImportProgressStore.getState().cancelImport();
+        await useImportProgressStore.getState().finishImportAsync();
         if (!cancelled) {
+          markToolFileImported(pdfToolKey, convertPdfPath);
           setPreviewDocId("");
           setPreviewPageCount(0);
           setPreviewPage(1);
@@ -536,36 +540,34 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
         </div>
       </div>
 
-      {resultMessage && (
-        <div className="p-3 rounded-xl bg-status-success/10 border border-status-success/30 font-body-sm text-body-sm text-status-success break-words">
+      {subTab === "forms" && resultMessage && (
+        <div className="p-2.5 rounded-lg bg-status-success/10 border border-status-success/30 font-caption text-caption text-status-success break-words">
           {resultMessage}
-        </div>
-      )}
-      {errorMessage && (
-        <div className="p-3 rounded-xl bg-error-container/40 border border-status-danger/40 font-body-sm text-body-sm text-error break-words">
-          {errorMessage}
         </div>
       )}
 
       {subTab === "compare" ? (
         <PdfCompareViewer />
       ) : subTab === "forms" ? (
-        <FormEditorCanvas
-          docId={previewDocId}
-          pageCount={previewPageCount}
-          inputPath={convertPdfPath}
-          outputDir={outputDir}
-          outputFilename={outputFilename}
-          onChangeOutputFilename={setOutputFilename}
-          onSaved={(msg) => {
-            setResultMessage(msg);
-            void refreshMetricsAndLogs();
-          }}
-        />
+        <div className="flex flex-col gap-space-md">
+          <InlineImportProgress />
+          <FormEditorCanvas
+            docId={previewDocId}
+            pageCount={previewPageCount}
+            inputPath={convertPdfPath}
+            outputDir={outputDir}
+            outputFilename={outputFilename}
+            onChangeOutputFilename={setOutputFilename}
+            onSaved={(msg) => {
+              setResultMessage(msg);
+              void refreshMetricsAndLogs();
+            }}
+          />
+        </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-space-lg items-start">
           <div className="xl:col-span-8 bg-surface-card border border-border-default rounded-xl p-space-xl flex flex-col gap-space-md">
-            {(subTab === "img2pdf" || !convertPdfPath) && (
+            {(subTab === "img2pdf" || !convertPdfPath || isImporting) && (
               <DropZoneWell
                 title={
                   subTab === "img2pdf"
@@ -581,8 +583,6 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
                 accentClass="text-tag-convert"
               />
             )}
-
-            {subTab !== "img2pdf" && <InlineImportProgress />}
 
             {subTab === "img2pdf" ? (
               convertImagePaths.length > 0 ? (
@@ -621,7 +621,7 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
                   </div>
                 </div>
               ) : null
-            ) : convertPdfPath ? (
+            ) : !isImporting && convertPdfPath ? (
               <div className="flex flex-col gap-3">
                 <div className="p-3 rounded-lg bg-surface-elevated border border-border-subtle flex items-center justify-between gap-2">
                   <span className="font-mono-metric text-caption text-text-secondary truncate">
@@ -679,11 +679,11 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
                   </div>
                 )}
               </div>
-            ) : (
+            ) : !isImporting ? (
               <div className="p-3 rounded-lg bg-surface-elevated/50 border border-border-subtle font-caption text-caption text-text-muted">
                 No PDF selected — drag &amp; drop a PDF above or click Select PDF.
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="xl:col-span-4 flex flex-col gap-space-md">
@@ -720,6 +720,8 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
               disabled={!hasActiveInput}
               isProcessing={isExecuting}
               processingPercent={processingPercent}
+              resultMessage={resultMessage}
+              errorMessage={errorMessage}
               processingLabel={
                 subTab === "pdf2img"
                   ? "Rendering pages to images..."

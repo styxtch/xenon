@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { formatBytes, isTauriRuntime } from "../../lib/tauriClient";
 import {
@@ -20,6 +20,7 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
   onExecute,
   onSwitchSubTab,
 }) => {
+  const documents = useDocumentStore((s) => s.documents);
   const pages = useDocumentStore((s) => s.pages);
   const splitPages = useDocumentStore((s) => s.splitPages);
   const totalBytes = useDocumentStore((s) => s.totalBytes);
@@ -30,6 +31,7 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
   const retainBookmarksToc = useDocumentStore((s) => s.retainBookmarksToc);
   const standardizeToA4 = useDocumentStore((s) => s.standardizeToA4);
   const pdfVersionProfile = useDocumentStore((s) => s.pdfVersionProfile);
+  const preservePassword = useDocumentStore((s) => s.preservePassword);
   const splitMode = useDocumentStore((s) => s.splitMode);
   const splitRangeSpec = useDocumentStore((s) => s.splitRangeSpec);
   const splitEveryN = useDocumentStore((s) => s.splitEveryN);
@@ -50,6 +52,7 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
   const setRetainBookmarksToc = useDocumentStore((s) => s.setRetainBookmarksToc);
   const setStandardizeToA4 = useDocumentStore((s) => s.setStandardizeToA4);
   const setPdfVersionProfile = useDocumentStore((s) => s.setPdfVersionProfile);
+  const setPreservePassword = useDocumentStore((s) => s.setPreservePassword);
   const setSplitMode = useDocumentStore((s) => s.setSplitMode);
   const setSplitRangeSpec = useDocumentStore((s) => s.setSplitRangeSpec);
   const setSplitEveryN = useDocumentStore((s) => s.setSplitEveryN);
@@ -66,8 +69,10 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
     (s) => s.settings.primaryDestinationFolder
   );
   const updateSetting = useSettingsStore((s) => s.updateSetting);
+  const [showCropControls, setShowCropControls] = useState(false);
 
   const selectedPages = pages.filter((p) => p.selected);
+  const hasEncryptedSource = pages.some((p) => documents[p.sourceDocId]?.isEncrypted);
   const hasInput =
     activeSubTab === "merge"
       ? mergeQueue.length > 0
@@ -174,8 +179,19 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
           <button
             type="button"
             disabled={pages.length === 0}
-            onClick={() => onSwitchSubTab("crop")}
-            className="flex items-center gap-2 p-2.5 rounded-lg bg-surface-elevated hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed border border-border-subtle text-text-primary transition-colors text-left"
+            onClick={() => {
+              if (activeSubTab !== "grid") {
+                onSwitchSubTab("grid");
+                setShowCropControls(true);
+              } else {
+                setShowCropControls((prev) => !prev);
+              }
+            }}
+            className={`flex items-center gap-2 p-2.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed border text-text-primary transition-colors text-left ${
+              activeSubTab === "grid" && showCropControls
+                ? "bg-tag-convert/10 border-tag-convert/60"
+                : "bg-surface-elevated hover:bg-surface-hover border-border-subtle"
+            }`}
           >
             <AppIcon name="crop_rotate" className="w-[18px] h-[18px] text-tag-convert" />
             <div className="min-w-0">
@@ -205,15 +221,26 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
 
       {/* Card 2: Tool Parameters / Arrangement Rules */}
       <div className="bg-surface-card border border-border-default rounded-xl p-space-md shadow-sm flex flex-col gap-space-md">
-        <div className="flex items-center gap-2">
-          <AppIcon name="tune" className="w-5 h-5 text-tag-organize" />
-          <h2 className="font-headline-sm text-headline-sm text-text-primary">
-            {activeSubTab === "split"
-              ? "Split Parameters"
-              : activeSubTab === "crop"
-                ? "Margin Crop Controls (pts)"
-                : "Arrangement Rules"}
-          </h2>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AppIcon name="tune" className="w-5 h-5 text-tag-organize" />
+            <h2 className="font-headline-sm text-headline-sm text-text-primary">
+              {activeSubTab === "split"
+                ? "Split Parameters"
+                : activeSubTab === "grid" && showCropControls
+                  ? "Margin Crop Controls (pts)"
+                  : "Arrangement Rules"}
+            </h2>
+          </div>
+          {activeSubTab === "grid" && showCropControls && (
+            <button
+              type="button"
+              onClick={() => setShowCropControls(false)}
+              className="px-2 py-0.5 rounded bg-surface-elevated hover:bg-surface-hover border border-border-subtle font-caption text-caption text-text-secondary hover:text-text-primary"
+            >
+              Done
+            </button>
+          )}
         </div>
 
         {activeSubTab === "split" ? (
@@ -272,8 +299,11 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
               />
             </label>
           </div>
-        ) : activeSubTab === "crop" ? (
+        ) : activeSubTab === "grid" && showCropControls ? (
           <div className="space-y-3">
+            <p className="font-caption text-caption text-text-muted">
+              Trim outer page margins (72 pts ≈ 1 in / 2.54 cm). Preview updates when applied.
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {(["top", "bottom", "left", "right"] as const).map((side) => (
                 <div key={side}>
@@ -300,7 +330,9 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
                 onClick={applyCropToSelected}
                 className="flex-1 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed border border-border-default font-body-sm text-body-sm text-primary font-medium"
               >
-                Apply Crop Box
+                {selectedPages.length > 0
+                  ? `Apply to Selected (${selectedPages.length})`
+                  : "Apply to All Pages"}
               </button>
               <button
                 type="button"
@@ -308,7 +340,7 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
                 onClick={resetCropOnSelected}
                 className="px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed border border-border-default font-body-sm text-body-sm text-text-secondary"
               >
-                Reset
+                {selectedPages.length > 0 ? "Reset Selected" : "Reset All"}
               </button>
             </div>
           </div>
@@ -347,6 +379,25 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
                 className="w-4 h-4 accent-primary"
               />
             </label>
+
+            {hasEncryptedSource && (
+              <label className="flex items-center justify-between cursor-pointer p-2.5 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-tag-security/30 transition-colors">
+                <div className="flex flex-col">
+                  <span className="font-body-sm text-body-sm text-text-primary font-medium">
+                    Keep original PDF password
+                  </span>
+                  <span className="font-caption text-caption text-text-muted">
+                    Re-encrypt output with AES-256 (uncheck to export unlocked)
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={preservePassword}
+                  onChange={(e) => setPreservePassword(e.target.checked)}
+                  className="w-4 h-4 accent-primary"
+                />
+              </label>
+            )}
 
             <div className="p-2.5 rounded-lg bg-surface-container border border-border-subtle flex items-center justify-between">
               <div className="flex items-center gap-2">

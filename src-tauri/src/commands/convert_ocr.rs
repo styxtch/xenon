@@ -90,6 +90,7 @@ pub fn pdf_to_images(
 ) -> Result<Vec<String>, AppError> {
     let start = std::time::Instant::now();
     let in_buf = PathBuf::from(&options.input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     let out_dir = PathBuf::from(&options.output_dir);
     let orig_bytes = std::fs::metadata(&in_buf).map(|m| m.len()).unwrap_or(0);
 
@@ -199,6 +200,7 @@ pub async fn ocr_pdf(
         let paths = EnginePaths::resolve(resource_dir.as_deref());
 
         let in_buf = PathBuf::from(&options.input_path);
+        pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
         let out_buf = PathBuf::from(&options.output_path);
         let doc_name = out_buf
             .file_name()
@@ -274,6 +276,7 @@ pub async fn convert_pdfa(
         let paths = EnginePaths::resolve(resource_dir.as_deref());
 
         let in_buf = PathBuf::from(&input_path);
+        pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
         let out_buf = PathBuf::from(&output_path);
         let doc_name = out_buf
             .file_name()
@@ -336,6 +339,8 @@ pub fn compare_pdfs(
 ) -> Result<Vec<PageDiffSummary>, AppError> {
     let left = PathBuf::from(&options.left_pdf_path);
     let right = PathBuf::from(&options.right_pdf_path);
+    pdfium_engine::ensure_pdf_unlocked(&left)?;
+    pdfium_engine::ensure_pdf_unlocked(&right)?;
     let summaries = diff_engine::compare_pdf_documents(&left, &right, options.dpi)?;
 
     push_and_emit_log(

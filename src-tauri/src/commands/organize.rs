@@ -2,7 +2,7 @@ use crate::commands::system::{push_and_emit_log, LogBufferState};
 use crate::db::history_repo::{self, JobTickEvent};
 use crate::db::settings_repo;
 use crate::db::DatabaseState;
-use crate::engines::pdfium_engine::PdfEngineRegistry;
+use crate::engines::pdfium_engine::{self, PdfEngineRegistry};
 use crate::engines::qpdf_engine::{
     self, OrganizeExecutionResult, OrganizeOptions, PageReorderSpec, SplitOptions,
 };
@@ -151,6 +151,7 @@ pub fn execute_merge_pdfs(
         retain_bookmarks_toc,
         standardize_to_a4,
         pdf_version_profile,
+        preserve_password: true,
         output_path: output_path.clone(),
     };
 
@@ -207,6 +208,7 @@ pub fn execute_split_pdf(
     logs: State<'_, LogBufferState>,
     options: SplitOptions,
 ) -> Result<Vec<OrganizeExecutionResult>, AppError> {
+    pdfium_engine::ensure_pdf_unlocked(std::path::Path::new(&options.input_path))?;
     let settings = settings_repo::get_settings(&db)?;
     let cache_dir = PathBuf::from(&settings.temp_cache_dir);
     let resource_dir = app.path().resource_dir().ok();

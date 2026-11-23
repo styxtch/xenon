@@ -23,6 +23,7 @@ export interface OrganizeOptions {
   retainBookmarksToc: boolean;
   standardizeToA4: boolean;
   pdfVersionProfile: "1.7" | "2.0" | "pdfa-2b";
+  preservePassword?: boolean;
   outputPath: string;
 }
 

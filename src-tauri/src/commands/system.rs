@@ -317,6 +317,18 @@ pub fn check_existing_paths(paths: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+#[cfg(target_os = "windows")]
+fn normalize_windows_path(path: &std::path::Path) -> String {
+    let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let raw = resolved.to_string_lossy();
+    let stripped = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{}", unc)
+    } else {
+        raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_string()
+    };
+    stripped.replace('/', "\\")
+}
+
 #[tauri::command]
 pub fn reveal_in_explorer(path: String) -> Result<(), AppError> {
     let target = std::path::PathBuf::from(&path);
@@ -328,13 +340,15 @@ pub fn reveal_in_explorer(path: String) -> Result<(), AppError> {
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        let normalized = normalize_windows_path(&target);
         if target.is_dir() {
             std::process::Command::new("explorer.exe")
-                .arg(&target)
+                .arg(&normalized)
                 .spawn()?;
         } else {
             std::process::Command::new("explorer.exe")
-                .arg(format!("/select,{}", target.display()))
+                .raw_arg(format!("/select,\"{}\"", normalized))
                 .spawn()?;
         }
     }
@@ -368,8 +382,12 @@ pub fn open_file_in_os(path: String) -> Result<(), AppError> {
     }
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer.exe")
-            .arg(&target)
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let normalized = normalize_windows_path(&target);
+        std::process::Command::new("cmd")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["/C", "start", "", &normalized])
             .spawn()?;
     }
     #[cfg(target_os = "macos")]

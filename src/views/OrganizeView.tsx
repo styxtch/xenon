@@ -120,7 +120,6 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
   const mergeExtractedIntoSinglePdf = useDocumentStore(
     (s) => s.mergeExtractedIntoSinglePdf
   );
-  const cropMargins = useDocumentStore((s) => s.cropMargins);
   const setOutputFilename = useDocumentStore((s) => s.setOutputFilename);
 
   const initSampleDocument = useDocumentStore((s) => s.initSampleDocument);
@@ -255,7 +254,7 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
       return;
     }
     const picked = await open({
-      multiple: subTab === "merge" || subTab === "grid" || subTab === "crop",
+      multiple: subTab === "merge" || subTab === "grid",
       filters:
         subTab === "merge"
           ? [{ name: "PDF Files", extensions: ["pdf"] }]
@@ -327,7 +326,7 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
 
           {((subTab === "merge" && mergeQueue.length > 0) ||
             (subTab === "split" && splitPages.length > 0) ||
-            ((subTab === "grid" || subTab === "crop") && pages.length > 0)) && (
+            (subTab === "grid" && pages.length > 0)) && (
             <div className="flex items-center gap-space-sm flex-wrap">
               <button
                 type="button"
@@ -373,7 +372,6 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
                 { id: "grid", label: "Visual Page Grid", icon: "auto_awesome_mosaic" },
                 { id: "merge", label: "Merge Files Queue", icon: "call_merge" },
                 { id: "split", label: "Split by Range", icon: "call_split" },
-                { id: "crop", label: "Crop & Rotate", icon: "crop_rotate" },
               ] as const
             ).map((t) => {
               const active = subTab === t.id;
@@ -398,7 +396,7 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
             })}
           </div>
 
-          {((subTab === "grid" || subTab === "crop") && pages.length > 0) ||
+          {(subTab === "grid" && pages.length > 0) ||
           (subTab === "merge" && mergeQueue.length > 0) ||
           (subTab === "split" && splitPages.length > 0) ? (
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -427,7 +425,7 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
                   <span>Select All</span>
                 </button>
               )}
-              {(subTab === "grid" || subTab === "crop") && (
+              {subTab === "grid" && (
                 <>
                   <button
                     type="button"
@@ -629,34 +627,6 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
-
-          {subTab === "crop" && (
-            <div className="bg-surface-card border border-border-default rounded-xl p-space-md flex flex-col gap-space-md">
-              <div className="p-4 rounded-lg bg-surface-elevated border border-border-subtle flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h2 className="font-headline-sm text-headline-sm text-text-primary">
-                    CropBox &amp; Orientation Stage
-                  </h2>
-                  <p className="font-caption text-caption text-text-muted">
-                    Current margins: Top {cropMargins.top}pt • Bottom {cropMargins.bottom}pt • Left {cropMargins.left}pt • Right {cropMargins.right}pt
-                  </p>
-                </div>
-                <span className="font-mono-metric text-caption px-2.5 py-1 rounded bg-surface-card text-tag-convert border border-border-subtle">
-                  {selectedCount} page(s) targeted
-                </span>
-              </div>
-              {pages.length === 0 ? (
-                <DropZoneWell
-                  title="Drop PDF or image files here, or click to open (Ctrl+O)"
-                  subtitle="Load a document first to adjust CropBox margins and page orientation."
-                  onSelectFiles={onOpenFiles}
-                  accentClass="text-tag-organize"
-                />
-              ) : (
-                <VisualPageGrid onInsertFiles={handleInsertDocumentsOrImages} />
               )}
             </div>
           )}

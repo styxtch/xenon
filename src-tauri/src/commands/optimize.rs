@@ -6,6 +6,7 @@ use crate::engines::gs_engine::{
     self, CompressExecutionResult, CompressOptions, OptimizeSingleResult, RepairExecutionResult,
 };
 use crate::engines::lopdf_crypto::{self, SanitizeResult, SizeEstimateResult};
+use crate::engines::pdfium_engine;
 use crate::engines::resolver::EnginePaths;
 use crate::error::AppError;
 use crate::utils::process_control::ProcessRegistry;
@@ -48,8 +49,10 @@ pub fn estimate_compressed_size(
     custom_dpi: Option<u32>,
     custom_jpeg_quality: Option<u8>,
 ) -> Result<SizeEstimateResult, AppError> {
+    let in_buf = PathBuf::from(&input_path);
+    pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
     lopdf_crypto::estimate_compressed_size(
-        &PathBuf::from(input_path),
+        &in_buf,
         &profile,
         custom_dpi,
         custom_jpeg_quality,
@@ -66,6 +69,9 @@ pub async fn compress_pdf(
             return Err(AppError::InvalidInput(
                 "Select at least 1 PDF file to compress".to_string(),
             ));
+        }
+        for raw_in in &options.input_paths {
+            pdfium_engine::ensure_pdf_unlocked(std::path::Path::new(raw_in))?;
         }
 
         let db = app.state::<DatabaseState>();
@@ -175,6 +181,7 @@ pub async fn repair_pdf(
         let paths = EnginePaths::resolve(resource_dir.as_deref());
 
         let in_buf = PathBuf::from(&input_path);
+        pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
         let out_buf = PathBuf::from(&output_path);
         let doc_name = out_buf
             .file_name()
@@ -253,6 +260,7 @@ pub async fn linearize_pdf(
         let paths = EnginePaths::resolve(resource_dir.as_deref());
 
         let in_buf = PathBuf::from(&input_path);
+        pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
         let out_buf = PathBuf::from(&output_path);
         let doc_name = out_buf
             .file_name()
@@ -338,6 +346,7 @@ pub async fn sanitize_metadata(
         let settings = settings_repo::get_settings(&db)?;
         let cache_dir = PathBuf::from(&settings.temp_cache_dir);
         let in_buf = PathBuf::from(&input_path);
+        pdfium_engine::ensure_pdf_unlocked(&in_buf)?;
         let out_buf = PathBuf::from(&output_path);
 
         let res = lopdf_crypto::sanitize_pdf_metadata(&in_buf, &out_buf, &cache_dir)?;
