@@ -622,10 +622,9 @@ export const tauriClient = {
       outputBytes: 17_203_900,
       pageCount: 12,
       durationMs: 65,
-      command_log: "incremental_pades_sign",
       commandLog: `lopdf_crypto::incremental_pades_sign -> "${options.outputPath}"`,
       summary: "Signed incrementally with PKCS#12 detached CMS/SHA-256 signature",
-    } as SecurityExecutionResult;
+    };
   },
 
   async applyWatermark(options: SecuritySignOptions): Promise<SecurityExecutionResult> {

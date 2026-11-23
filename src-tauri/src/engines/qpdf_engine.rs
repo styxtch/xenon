@@ -486,10 +486,50 @@ fn clone_page_into_doc(
     }
 
     if standardize_to_a4 {
+        let orig_mb = new_dict
+            .get(b"MediaBox")
+            .ok()
+            .and_then(|o| o.as_array().ok())
+            .filter(|a| a.len() == 4)
+            .map(|a| {
+                let f = |obj: &Object| match obj {
+                    Object::Integer(v) => *v as f32,
+                    Object::Real(v) => *v,
+                    _ => 0.0,
+                };
+                [f(&a[0]), f(&a[1]), f(&a[2]), f(&a[3])]
+            })
+            .unwrap_or([0.0, 0.0, 595.28, 841.89]);
+        let orig_w = (orig_mb[2] - orig_mb[0]).abs().max(72.0);
+        let orig_h = (orig_mb[3] - orig_mb[1]).abs().max(72.0);
+
+        if (orig_w - 595.28).abs() > 2.0 || (orig_h - 841.89).abs() > 2.0 {
+            let scale = (595.28 / orig_w).min(841.89 / orig_h);
+            let tx = (595.28 - orig_w * scale) * 0.5 - orig_mb[0].min(orig_mb[2]) * scale;
+            let ty = (841.89 - orig_h * scale) * 0.5 - orig_mb[1].min(orig_mb[3]) * scale;
+            let prefix_bytes = format!("q\n{scale:.5} 0 0 {scale:.5} {tx:.2} {ty:.2} cm\n").into_bytes();
+            let suffix_bytes = b"\nQ\n".to_vec();
+            let prefix_id = dst_doc.add_object(lopdf::Stream::new(lopdf::dictionary! {}, prefix_bytes));
+            let suffix_id = dst_doc.add_object(lopdf::Stream::new(lopdf::dictionary! {}, suffix_bytes));
+
+            let existing_contents = new_dict.get(b"Contents").ok().cloned();
+            let mut next_contents = match existing_contents {
+                Some(Object::Array(a)) => a,
+                Some(other) => vec![other],
+                None => Vec::new(),
+            };
+            next_contents.insert(0, prefix_id.into());
+            next_contents.push(suffix_id.into());
+            new_dict.set("Contents", Object::Array(next_contents));
+        }
+
         new_dict.set(
             "MediaBox",
             vec![0.into(), 0.into(), 595.28_f32.into(), 841.89_f32.into()],
         );
+        if crop_box.is_none() {
+            new_dict.remove(b"CropBox");
+        }
     }
 
     if let Some([l, b, r, t]) = crop_box {
@@ -618,6 +658,27 @@ fn write_pdf_atomically(
     Ok(size)
 }
 
+struct TempSecretFile {
+    path: PathBuf,
+}
+
+impl TempSecretFile {
+    fn create(cache_dir: &Path, prefix: &str, contents: &str) -> Result<Self, AppError> {
+        std::fs::create_dir_all(cache_dir)?;
+        let path = cache_dir.join(format!("{prefix}_{}.txt", Uuid::new_v4()));
+        std::fs::write(&path, contents.as_bytes())?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for TempSecretFile {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
 pub fn encrypt_pdf_aes(
     paths: &EnginePaths,
     input_path: &Path,
@@ -661,27 +722,32 @@ pub fn encrypt_pdf_aes(
     };
 
     let guard = PartFileGuard::new(temp_cache_dir, output_path, "encrypt")?;
-    let mut cmd = build_sidecar_command(&paths.qpdf_bin, paths);
+    let mut arg_lines = Vec::new();
     if enc.level == "pdf2-aes256" {
-        cmd.arg("--force-version=2.0");
+        arg_lines.push("--force-version=2.0".to_string());
     }
-    cmd.arg("--encrypt")
-        .arg(user_pwd)
-        .arg(owner_pwd)
-        .arg(bits);
+    arg_lines.push("--encrypt".to_string());
+    arg_lines.push(user_pwd.replace(['\r', '\n'], ""));
+    arg_lines.push(owner_pwd.replace(['\r', '\n'], ""));
+    arg_lines.push(bits.to_string());
     if bits == "128" {
-        cmd.arg("--use-aes=y");
+        arg_lines.push("--use-aes=y".to_string());
     }
-    cmd.arg(print_flag)
-        .arg(extract_flag)
-        .arg(modify_flag)
-        .arg("--")
+    arg_lines.push(print_flag.to_string());
+    arg_lines.push(extract_flag.to_string());
+    arg_lines.push(modify_flag.to_string());
+    arg_lines.push("--".to_string());
+    let arg_file = TempSecretFile::create(temp_cache_dir, "qpdf_args", &arg_lines.join("\n"))?;
+
+    let mut cmd = build_sidecar_command(&paths.qpdf_bin, paths);
+    cmd.arg(format!("@{}", arg_file.path.display()))
         .arg(input_path)
         .arg(guard.part_path());
 
     let out = cmd
         .output()
         .map_err(|e| AppError::EngineError(format!("Failed to execute QPDF encrypt: {e}")))?;
+    drop(arg_file);
     let code = out.status.code().unwrap_or(-1);
     if code != 0 && code != 3 {
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -774,7 +840,9 @@ pub fn decrypt_pdf_password(
     }
 
     let guard = PartFileGuard::new(temp_cache_dir, output_path, "decrypt")?;
-    let password_arg = format!("--password={password}");
+    let clean_pwd = password.replace(['\r', '\n'], "");
+    let pwd_file = TempSecretFile::create(temp_cache_dir, "qpdf_pwd", &clean_pwd)?;
+    let password_arg = format!("--password-file={}", pwd_file.path.display());
     let out = build_sidecar_command(&paths.qpdf_bin, paths)
         .arg(password_arg)
         .arg("--decrypt")
@@ -782,6 +850,7 @@ pub fn decrypt_pdf_password(
         .arg(guard.part_path())
         .output()
         .map_err(|e| AppError::EngineError(format!("Failed to execute QPDF decrypt: {e}")))?;
+    drop(pwd_file);
 
     let code = out.status.code().unwrap_or(-1);
     if code != 0 && code != 3 {

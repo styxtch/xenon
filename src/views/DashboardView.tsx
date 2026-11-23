@@ -3,8 +3,10 @@ import { AppIcon } from "../components/common/AppIcon";
 import { CategoryBadge } from "../components/common/CategoryBadge";
 import { SegmentedTickProgress } from "../components/common/SegmentedTickProgress";
 import { formatBytes, formatCompressionDelta, tauriClient } from "../lib/tauriClient";
+import { useDocumentStore } from "../stores/documentStore";
 import { useHistoryStore } from "../stores/historyStore";
 import { useTelemetryStore } from "../stores/telemetryStore";
+import { useToolFilesStore } from "../stores/toolFilesStore";
 import type { ActiveViewId, SuiteCategory } from "../types/xenon";
 
 interface DashboardViewProps {
@@ -84,7 +86,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const setSearchQuery = useHistoryStore((s) => s.setSearchQuery);
   const setCategoryFilter = useHistoryStore((s) => s.setCategoryFilter);
   const cancelJob = useHistoryStore((s) => s.cancelJob);
-  const rerunJob = useHistoryStore((s) => s.rerunJob);
   const telemetry = useTelemetryStore((s) => s.telemetry);
 
   const [suiteQuery, setSuiteQuery] = useState("");
@@ -159,7 +160,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
           <p className="font-body-default text-body-default text-text-secondary">
-            Your Documents. Your Device. Your Privacy. — Offline Engine: Ghostscript v10.03, PDFium, QPDF &amp; Lopdf
+            Your Documents. Your Device. Your Privacy. — Offline Engine: Ghostscript v10.05, PDFium, QPDF &amp; Lopdf
           </p>
         </div>
 
@@ -390,7 +391,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   0,
                   ...metrics.weeklyThroughput.map((d) => d.count)
                 );
-                return metrics.weeklyThroughput.map((day) => {
+                return metrics.weeklyThroughput.map((day, idx) => {
                   const isPeak = maxCount > 0 && day.count === maxCount;
                   const heightPct =
                     day.count > 0 && maxCount > 0
@@ -398,21 +399,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       : 18;
                   return (
                     <div
-                      key={day.dayLabel}
+                      key={`${day.dayLabel}-${idx}`}
                       className="flex-1 flex flex-col items-center h-full justify-end group"
                     >
                       <div className="w-full bg-surface-elevated rounded-t-md h-full flex flex-col justify-end p-1 relative overflow-hidden">
                         <div
                           className={`w-full rounded-sm flex items-center justify-center transition-all duration-500 ${
-                            isPeak ? "bg-text-secondary shadow-sm" : "bg-surface-active"
+                            isPeak
+                              ? "bg-primary shadow-sm"
+                              : day.count > 0
+                                ? "bg-primary/35"
+                                : "bg-surface-active"
                           }`}
                           style={{ height: `${heightPct}%` }}
                         >
                           <span
                             className={`font-mono-metric text-[10px] ${
                               isPeak
-                                ? "text-surface-container-lowest font-bold"
-                                : "text-text-secondary"
+                                ? "text-on-primary font-bold"
+                                : day.count > 0
+                                  ? "text-text-primary font-medium"
+                                  : "text-text-muted"
                             }`}
                           >
                             {day.count > 0 ? `${day.count}` : "0"}
@@ -626,11 +633,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                               </button>
                               <button
                                 type="button"
-                                onClick={() => rerunJob(doc.jobId)}
-                                title="Re-run Operation"
-                                className="p-1.5 rounded hover:bg-surface-card text-text-secondary hover:text-text-primary transition-colors"
+                                onClick={() => {
+                                  const viewMap: Record<SuiteCategory, ActiveViewId> = {
+                                    organize: "organize-pdf",
+                                    optimize: "optimize-repair",
+                                    convert: "convert-ocr",
+                                    security: "security-sign",
+                                  };
+                                  const targetView = viewMap[doc.category] ?? "organize-pdf";
+                                  const path = doc.outputPath;
+                                  if (path && path.toLowerCase().endsWith(".pdf")) {
+                                    if (doc.category === "organize") {
+                                      void useDocumentStore.getState().openPdfFile(path);
+                                    } else if (doc.category === "optimize") {
+                                      useToolFilesStore.getState().addToolFiles("optimize:compress", [path]);
+                                    } else if (doc.category === "convert") {
+                                      useToolFilesStore.getState().setToolFiles("convert:pdf2img", [path]);
+                                    } else if (doc.category === "security") {
+                                      useToolFilesStore.getState().setToolFiles("security:protect", [path]);
+                                    }
+                                  }
+                                  onNavigate(targetView);
+                                }}
+                                title="Open in Tool Suite"
+                                className="p-1.5 rounded hover:bg-surface-card text-text-secondary hover:text-primary transition-colors"
                               >
-                                <AppIcon name="replay" className="w-[17px] h-[17px]" />
+                                <AppIcon name="bolt" className="w-[17px] h-[17px]" />
                               </button>
                             </>
                           )}

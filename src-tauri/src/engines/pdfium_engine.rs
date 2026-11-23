@@ -681,13 +681,120 @@ pub fn execute_true_redaction(
             .unwrap_or([0.0, 0.0, 595.28, 841.89]);
         let page_w = (media_box[2] - media_box[0]).abs().max(72.0);
         let page_h = (media_box[3] - media_box[1]).abs().max(72.0);
+        let sx = page_w / 595.28;
+        let sy = page_h / 841.89;
+        let scaled_boxes: Vec<RedactionBox> = page_boxes
+            .iter()
+            .map(|b| RedactionBox {
+                page_number: b.page_number,
+                x: b.x * sx,
+                y: b.y * sy,
+                width: b.width * sx,
+                height: b.height * sy,
+                fill_color_hex: b.fill_color_hex.clone(),
+                label: b.label.clone(),
+            })
+            .collect();
+        let scaled_refs: Vec<&RedactionBox> = scaled_boxes.iter().collect();
 
-        // Step A: Extract positioned text runs and discard any run overlapping a RedactionBox
-        let runs = extract_positioned_text_runs(&doc, page_id, page_h);
+        // Step A: Extract surviving unredacted text runs using PDFium character bounding boxes
+        // (falling back to lopdf content stream runs when PDFium text extraction is unavailable).
         let surviving_runs: Vec<PositionedTextRun> = if spec.preserve_unredacted_text {
-            runs.into_iter()
-                .filter(|run| !run_intersects_any_box(run, page_boxes))
-                .collect()
+            if let Ok((pw, ph, chars)) =
+                pdfium_ffi::extract_page_char_boxes(None, input_path, None, page_num)
+            {
+                if !chars.is_empty() {
+                    let csx = page_w / pw.max(72.0);
+                    let csy = page_h / ph.max(72.0);
+                    let mut out_runs: Vec<PositionedTextRun> = Vec::new();
+                    let mut cur_text = String::new();
+                    let mut cur_x = 0.0_f32;
+                    let mut cur_y = 0.0_f32;
+                    let mut cur_top = 0.0_f32;
+                    let mut cur_right = 0.0_f32;
+                    let mut cur_h = 12.0_f32;
+
+                    let flush_run = |runs: &mut Vec<PositionedTextRun>,
+                                     txt: &mut String,
+                                     x: f32,
+                                     y: f32,
+                                     top: f32,
+                                     right: f32,
+                                     h: f32| {
+                        let trimmed = txt.trim();
+                        if !trimmed.is_empty() {
+                            runs.push(PositionedTextRun {
+                                text: trimmed.to_string(),
+                                pdf_x: x,
+                                pdf_y: y,
+                                top_y: top,
+                                width_pts: (right - x).max(4.0),
+                                font_size: h.max(6.0),
+                            });
+                        }
+                        txt.clear();
+                    };
+
+                    for cb in chars {
+                        if cb.ch == '\r' || cb.ch == '\n' {
+                            flush_run(&mut out_runs, &mut cur_text, cur_x, cur_y, cur_top, cur_right, cur_h);
+                            continue;
+                        }
+                        let has_box = cb.right > cb.left && cb.top > cb.bottom;
+                        if has_box {
+                            let cl = cb.left * csx;
+                            let cr = cb.right * csx;
+                            let ct = (ph - cb.top).max(0.0) * csy;
+                            let cb_bot = (ph - cb.bottom).max(0.0) * csy;
+                            let intersects = scaled_refs.iter().any(|rb| {
+                                cl < rb.x + rb.width
+                                    && cr > rb.x
+                                    && ct < rb.y + rb.height
+                                    && cb_bot > rb.y
+                            });
+                            if intersects {
+                                flush_run(&mut out_runs, &mut cur_text, cur_x, cur_y, cur_top, cur_right, cur_h);
+                                continue;
+                            }
+                            let ch_h = (cb.top - cb.bottom).abs() * csy;
+                            let ch_y = cb.bottom * csy;
+                            let same_line = !cur_text.is_empty()
+                                && (ch_y - cur_y).abs() <= cur_h.max(ch_h) * 0.65
+                                && (cl - cur_right) <= cur_h.max(10.0) * 3.0
+                                && cl >= cur_x - 2.0;
+                            if !same_line && !cur_text.is_empty() {
+                                flush_run(&mut out_runs, &mut cur_text, cur_x, cur_y, cur_top, cur_right, cur_h);
+                            }
+                            if cur_text.is_empty() {
+                                cur_x = cl;
+                                cur_y = ch_y;
+                                cur_top = ct;
+                                cur_right = cr;
+                                cur_h = ch_h.max(6.0);
+                            } else {
+                                cur_right = cur_right.max(cr);
+                                cur_top = cur_top.min(ct);
+                                cur_h = cur_h.max(ch_h);
+                            }
+                            cur_text.push(cb.ch);
+                        } else if !cur_text.is_empty() {
+                            cur_text.push(cb.ch);
+                        }
+                    }
+                    flush_run(&mut out_runs, &mut cur_text, cur_x, cur_y, cur_top, cur_right, cur_h);
+                    out_runs
+                } else {
+                    extract_positioned_text_runs(&doc, page_id, page_h)
+                        .into_iter()
+                        .filter(|run| !run_intersects_any_box(run, &scaled_refs))
+                        .collect()
+                }
+            } else {
+                extract_positioned_text_runs(&doc, page_id, page_h)
+                    .into_iter()
+                    .filter(|run| !run_intersects_any_box(run, &scaled_refs))
+                    .collect()
+            }
         } else {
             Vec::new()
         };
@@ -727,7 +834,7 @@ pub fn execute_true_redaction(
         let scale_y = (out_bmp_h as f32) / page_h;
 
         // Burn-in solid redaction rectangles directly onto the pixel buffer
-        for rbox in page_boxes {
+        for rbox in &scaled_boxes {
             let fill = parse_rgb_hex(rbox.fill_color_hex.as_deref().unwrap_or("#000000"));
             let bx = ((rbox.x * scale_x).round() as i32).clamp(0, (out_bmp_w - 1) as i32) as u32;
             let by = ((rbox.y * scale_y).round() as i32).clamp(0, (out_bmp_h - 1) as i32) as u32;
@@ -808,8 +915,14 @@ pub fn execute_true_redaction(
 
     if sanitize_xmp {
         for obj in doc.objects.values_mut() {
-            if let Ok(dict) = obj.as_dict_mut() {
-                dict.remove(b"Metadata");
+            match obj {
+                Object::Dictionary(dict) => {
+                    dict.remove(b"Metadata");
+                }
+                Object::Stream(stream) => {
+                    stream.dict.remove(b"Metadata");
+                }
+                _ => {}
             }
         }
         doc.trailer.remove(b"Info");

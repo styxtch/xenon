@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { AppIcon } from "../components/common/AppIcon";
 import { CategoryBadge } from "../components/common/CategoryBadge";
 import { SegmentedTickProgress } from "../components/common/SegmentedTickProgress";
-import { formatBytes } from "../lib/tauriClient";
+import { formatBytes, tauriClient } from "../lib/tauriClient";
 import { useQueueStore, type QueueStatusFilter } from "../stores/queueStore";
 
 const FILTERS: { id: QueueStatusFilter; label: string }[] = [
@@ -20,7 +20,14 @@ export const BatchQueueView: React.FC = () => {
   const pauseJob = useQueueStore((s) => s.pauseJob);
   const resumeJob = useQueueStore((s) => s.resumeJob);
   const cancelJob = useQueueStore((s) => s.cancelJob);
+  const pauseAll = useQueueStore((s) => s.pauseAll);
+  const resumeAll = useQueueStore((s) => s.resumeAll);
+  const cancelAll = useQueueStore((s) => s.cancelAll);
   const clearCompleted = useQueueStore((s) => s.clearCompleted);
+
+  const hasProcessing = jobs.some((j) => j.status === "processing");
+  const hasPaused = jobs.some((j) => j.status === "paused");
+  const hasActiveOrPaused = hasProcessing || hasPaused || jobs.some((j) => j.status === "queued");
 
   const visibleJobs = useMemo(() => {
     if (statusFilter === "all") return jobs;
@@ -40,6 +47,36 @@ export const BatchQueueView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {hasProcessing && (
+            <button
+              type="button"
+              onClick={() => void pauseAll()}
+              className="px-3 py-1.5 rounded-lg bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default font-body-sm text-body-sm flex items-center gap-1.5"
+            >
+              <AppIcon name="pause" className="w-4 h-4" />
+              <span>Pause All</span>
+            </button>
+          )}
+          {hasPaused && (
+            <button
+              type="button"
+              onClick={() => void resumeAll()}
+              className="px-3 py-1.5 rounded-lg bg-surface-elevated hover:bg-surface-hover text-primary border border-border-default font-body-sm text-body-sm flex items-center gap-1.5"
+            >
+              <AppIcon name="play_arrow" className="w-4 h-4" />
+              <span>Resume All</span>
+            </button>
+          )}
+          {hasActiveOrPaused && (
+            <button
+              type="button"
+              onClick={() => void cancelAll()}
+              className="px-3 py-1.5 rounded-lg bg-error-container/30 hover:bg-error-container/50 text-error border border-status-danger/40 font-body-sm text-body-sm flex items-center gap-1.5"
+            >
+              <AppIcon name="stop_circle" className="w-4 h-4" />
+              <span>Cancel All</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={clearCompleted}
@@ -68,6 +105,14 @@ export const BatchQueueView: React.FC = () => {
       </div>
 
       <div className="bg-surface-card border border-border-default rounded-xl p-space-md flex flex-col gap-2">
+        {visibleJobs.length > 0 && (
+          <div className="hidden md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(180px,1.1fr)_160px_88px] items-center gap-3 px-4 pb-1 font-caption text-caption text-text-muted uppercase tracking-wider">
+            <span>Document</span>
+            <span>Operation</span>
+            <span>Progress</span>
+            <span className="text-right">Actions</span>
+          </div>
+        )}
         {visibleJobs.length === 0 ? (
           <div className="py-10 text-center text-text-muted font-body-sm text-body-sm">
             No batch jobs in this view.
@@ -76,34 +121,41 @@ export const BatchQueueView: React.FC = () => {
           visibleJobs.map((job) => (
             <div
               key={job.jobId}
-              className="bg-surface-elevated border border-border-subtle rounded-lg px-4 py-3 flex flex-wrap items-center justify-between gap-4"
+              className="bg-surface-elevated border border-border-subtle rounded-lg px-4 py-3 grid grid-cols-1 md:grid-cols-[minmax(0,2.2fr)_minmax(180px,1.1fr)_160px_88px] items-center gap-3"
             >
-              <div className="flex items-center gap-3 min-w-[220px]">
-                <AppIcon name="description" className="w-5 h-5 text-primary" />
-                <div>
-                  <div className="font-body-medium text-body-medium text-text-primary">
+              <div className="flex items-center gap-3 min-w-0">
+                <AppIcon name="description" className="w-5 h-5 text-primary shrink-0" />
+                <div className="min-w-0">
+                  <div
+                    className="font-body-medium text-body-medium text-text-primary truncate"
+                    title={job.documentName}
+                  >
                     {job.documentName}
                   </div>
-                  <div className="font-mono-metric text-caption text-text-muted">
+                  <div className="font-mono-metric text-caption text-text-muted truncate">
                     {formatBytes(job.originalBytes)} • {job.status}
                   </div>
                 </div>
               </div>
 
-              <CategoryBadge category={job.category} label={job.operationLabel} />
+              <div className="flex items-center">
+                <CategoryBadge category={job.category} label={job.operationLabel} />
+              </div>
 
-              <SegmentedTickProgress
-                completedTicks={job.completedTicks}
-                percentage={job.percentage}
-                status={job.status}
-                category={job.category}
-              />
+              <div className="flex items-center">
+                <SegmentedTickProgress
+                  completedTicks={job.completedTicks}
+                  percentage={job.percentage}
+                  status={job.status}
+                  category={job.category}
+                />
+              </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center md:justify-end gap-1.5">
                 {job.status === "processing" && (
                   <button
                     type="button"
-                    onClick={() => pauseJob(job.jobId)}
+                    onClick={() => void pauseJob(job.jobId)}
                     title="Pause Process Tree"
                     className="p-1.5 rounded bg-surface-card hover:bg-surface-hover border border-border-default text-text-secondary hover:text-text-primary"
                   >
@@ -113,7 +165,7 @@ export const BatchQueueView: React.FC = () => {
                 {job.status === "paused" && (
                   <button
                     type="button"
-                    onClick={() => resumeJob(job.jobId)}
+                    onClick={() => void resumeJob(job.jobId)}
                     title="Resume Process Tree"
                     className="p-1.5 rounded bg-surface-card hover:bg-surface-hover border border-border-default text-primary"
                   >
@@ -123,11 +175,21 @@ export const BatchQueueView: React.FC = () => {
                 {(job.status === "processing" || job.status === "paused") && (
                   <button
                     type="button"
-                    onClick={() => cancelJob(job.jobId)}
+                    onClick={() => void cancelJob(job.jobId)}
                     title="Cancel & Clean .part"
                     className="p-1.5 rounded bg-surface-card hover:bg-surface-hover border border-border-default text-status-danger"
                   >
                     <AppIcon name="stop_circle" className="w-4 h-4" />
+                  </button>
+                )}
+                {job.status === "completed" && job.outputPath && (
+                  <button
+                    type="button"
+                    onClick={() => void tauriClient.revealInExplorer(job.outputPath!)}
+                    title="Open Output Folder"
+                    className="p-1.5 rounded bg-surface-card hover:bg-surface-hover border border-border-default text-text-secondary hover:text-primary"
+                  >
+                    <AppIcon name="folder_open" className="w-4 h-4" />
                   </button>
                 )}
               </div>

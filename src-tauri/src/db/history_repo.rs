@@ -43,13 +43,13 @@ pub fn get_dashboard_metrics(db: &DatabaseState) -> Result<DashboardMetrics, App
     let conn = db.conn.lock();
 
     let processed_today_count: u32 = conn.query_row(
-        "SELECT COUNT(*) FROM job_history WHERE date(created_at) = date('now')",
+        "SELECT COUNT(*) FROM job_history WHERE date(created_at, 'localtime') = date('now', 'localtime')",
         [],
         |row| row.get(0),
     )?;
 
     let yesterday_count: i32 = conn.query_row(
-        "SELECT COUNT(*) FROM job_history WHERE date(created_at) = date('now', '-1 day')",
+        "SELECT COUNT(*) FROM job_history WHERE date(created_at, 'localtime') = date('now', 'localtime', '-1 day')",
         [],
         |row| row.get(0),
     )?;
@@ -81,17 +81,31 @@ pub fn get_dashboard_metrics(db: &DatabaseState) -> Result<DashboardMetrics, App
         |row| row.get(0),
     )?;
 
-    let mut weekly_stmt = conn.prepare(
-        "SELECT day_label, count FROM weekly_throughput ORDER BY day_order ASC",
-    )?;
-    let weekly_throughput = weekly_stmt
-        .query_map([], |row| {
-            Ok(WeeklyThroughputPoint {
-                day_label: row.get(0)?,
-                count: row.get(1)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut weekly_throughput = Vec::with_capacity(7);
+    for days_ago in (0..=6).rev() {
+        let modifier = format!("-{} days", days_ago);
+        let (dow_str, count): (String, u32) = conn.query_row(
+            "SELECT
+                strftime('%w', 'now', 'localtime', ?1),
+                (SELECT COUNT(*) FROM job_history
+                 WHERE status = 'completed'
+                   AND date(created_at, 'localtime') = date('now', 'localtime', ?1))",
+            rusqlite::params![modifier],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let day_label = match dow_str.as_str() {
+            "0" => "Sun",
+            "1" => "Mon",
+            "2" => "Tue",
+            "3" => "Wed",
+            "4" => "Thu",
+            "5" => "Fri",
+            "6" => "Sat",
+            _ => "Day",
+        }
+        .to_string();
+        weekly_throughput.push(WeeklyThroughputPoint { day_label, count });
+    }
 
     let mut docs_stmt = conn.prepare(
         "SELECT id, document_name, category, operation_label,

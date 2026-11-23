@@ -1,4 +1,6 @@
 import React from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { isTauriRuntime } from "../../lib/tauriClient";
 import { AppIcon } from "../common/AppIcon";
 
 const COLOR_SWATCHES = ["#4EDEA3", "#06B6D4", "#EF4444", "#F59E0B", "#F5F5F5"];
@@ -6,6 +8,7 @@ const COLOR_SWATCHES = ["#4EDEA3", "#06B6D4", "#EF4444", "#F59E0B", "#F5F5F5"];
 interface WatermarkInspectorProps {
   kind: "text" | "image";
   text: string;
+  imagePath: string;
   fontSizePts: number;
   colorHex: string;
   opacity: number;
@@ -15,6 +18,7 @@ interface WatermarkInspectorProps {
   flattenAll: boolean;
   onChangeKind: (k: "text" | "image") => void;
   onChangeText: (t: string) => void;
+  onChangeImagePath: (p: string) => void;
   onChangeFontSize: (s: number) => void;
   onChangeColor: (hex: string) => void;
   onChangeOpacity: (op: number) => void;
@@ -27,6 +31,7 @@ interface WatermarkInspectorProps {
 export const WatermarkInspector: React.FC<WatermarkInspectorProps> = ({
   kind,
   text,
+  imagePath,
   fontSizePts,
   colorHex,
   opacity,
@@ -36,6 +41,7 @@ export const WatermarkInspector: React.FC<WatermarkInspectorProps> = ({
   flattenAll,
   onChangeKind,
   onChangeText,
+  onChangeImagePath,
   onChangeFontSize,
   onChangeColor,
   onChangeOpacity,
@@ -44,6 +50,16 @@ export const WatermarkInspector: React.FC<WatermarkInspectorProps> = ({
   onChangeTargetPages,
   onToggleFlatten,
 }) => {
+  const handlePickImage = async () => {
+    if (!isTauriRuntime()) return;
+    const picked = await open({
+      multiple: false,
+      filters: [{ name: "Watermark Image", extensions: ["png", "jpg", "jpeg", "webp"] }],
+    });
+    if (typeof picked === "string") {
+      onChangeImagePath(picked);
+    }
+  };
   return (
     <div className="bg-surface-card border border-border-default rounded-xl p-space-md flex flex-col gap-space-md">
       <div className="flex items-center justify-between">
@@ -69,7 +85,7 @@ export const WatermarkInspector: React.FC<WatermarkInspectorProps> = ({
         </div>
       </div>
 
-      {kind === "text" && (
+      {kind === "text" ? (
         <div>
           <label className="block font-caption text-caption text-text-muted mb-1">
             Watermark Text
@@ -81,22 +97,51 @@ export const WatermarkInspector: React.FC<WatermarkInspectorProps> = ({
             className="w-full h-9 bg-surface-elevated border border-border-default rounded-lg px-3 font-body-sm text-body-sm text-text-primary focus:outline-none focus:border-primary-container"
           />
         </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-caption">
+            <span className="text-text-muted">Watermark Image (PNG / JPG)</span>
+            {imagePath && (
+              <button
+                type="button"
+                onClick={() => onChangeImagePath("")}
+                className="text-error hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => void handlePickImage()}
+            className="w-full py-2 px-3 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border-default font-body-sm text-body-sm text-text-primary flex items-center justify-center gap-2"
+          >
+            <AppIcon name="upload_file" className="w-4 h-4 text-primary" />
+            <span className="truncate">
+              {imagePath
+                ? imagePath.split(/[\\/]/).pop()
+                : "Select Watermark Image (PNG / JPG)"}
+            </span>
+          </button>
+        </div>
       )}
 
-      <div>
-        <div className="flex justify-between font-caption text-caption mb-1">
-          <span className="text-text-secondary">Font Size</span>
-          <span className="font-mono-metric text-primary">{fontSizePts} pt</span>
+      {kind === "text" && (
+        <div>
+          <div className="flex justify-between font-caption text-caption mb-1">
+            <span className="text-text-secondary">Font Size</span>
+            <span className="font-mono-metric text-primary">{fontSizePts} pt</span>
+          </div>
+          <input
+            type="range"
+            min={18}
+            max={96}
+            value={fontSizePts}
+            onChange={(e) => onChangeFontSize(Number(e.target.value))}
+            className="w-full accent-tag-security"
+          />
         </div>
-        <input
-          type="range"
-          min={18}
-          max={96}
-          value={fontSizePts}
-          onChange={(e) => onChangeFontSize(Number(e.target.value))}
-          className="w-full accent-tag-security"
-        />
-      </div>
+      )}
 
       <div>
         <div className="flex justify-between font-caption text-caption mb-1">
@@ -130,23 +175,25 @@ export const WatermarkInspector: React.FC<WatermarkInspectorProps> = ({
         />
       </div>
 
-      <div className="flex items-center justify-between">
-        <span className="font-caption text-caption text-text-secondary">Color</span>
-        <div className="flex items-center gap-1.5">
-          {COLOR_SWATCHES.map((hex) => (
-            <button
-              key={hex}
-              type="button"
-              onClick={() => onChangeColor(hex)}
-              aria-label={`Select color ${hex}`}
-              className={`w-6 h-6 rounded-full border ${
-                colorHex === hex ? "ring-2 ring-white border-white" : "border-border-default"
-              }`}
-              style={{ backgroundColor: hex }}
-            />
-          ))}
+      {kind === "text" && (
+        <div className="flex items-center justify-between">
+          <span className="font-caption text-caption text-text-secondary">Color</span>
+          <div className="flex items-center gap-1.5">
+            {COLOR_SWATCHES.map((hex) => (
+              <button
+                key={hex}
+                type="button"
+                onClick={() => onChangeColor(hex)}
+                aria-label={`Select color ${hex}`}
+                className={`w-6 h-6 rounded-full border ${
+                  colorHex === hex ? "ring-2 ring-white border-white" : "border-border-default"
+                }`}
+                style={{ backgroundColor: hex }}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         {(["foreground", "background"] as const).map((l) => (

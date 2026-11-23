@@ -89,9 +89,16 @@ pub fn run() {
                         .unwrap_or_else(|_| Response::new(Vec::new()))
                 }
                 Err(err) => {
+                    let escaped_err = err
+                        .to_string()
+                        .replace('&', "&amp;")
+                        .replace('<', "&lt;")
+                        .replace('>', "&gt;")
+                        .replace('"', "&quot;")
+                        .replace('\'', "&#39;");
                     let fallback = format!(
                         r##"<svg xmlns="http://www.w3.org/2000/svg" width="320" height="452" viewBox="0 0 320 452"><rect width="320" height="452" fill="#1F1F21"/><rect x="16" y="16" width="288" height="420" rx="6" fill="#28282A" stroke="#343436"/><text x="32" y="52" fill="#4EDEA3" font-family="Inter, sans-serif" font-size="13" font-weight="600">XENON Tile</text><text x="32" y="76" fill="#A1A1A6" font-family="Inter, sans-serif" font-size="11">{}</text></svg>"##,
-                        err
+                        escaped_err
                     );
                     Response::builder()
                         .status(200)

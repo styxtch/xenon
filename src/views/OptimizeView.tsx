@@ -105,16 +105,16 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
       (droppedPaths) => {
         const pdfs = droppedPaths.filter(isPdfPath);
         if (pdfs.length === 0) return;
-        addOptimizePaths(pdfs);
+        addToolFiles(toolKey, pdfs);
         setResultMessage(null);
         setErrorMessage(null);
       },
       "Drop PDF file(s) to queue in Optimize & Repair"
     );
-  }, [addOptimizePaths]);
+  }, [toolKey, addToolFiles]);
 
   useEffect(() => {
-    if (!primaryPath) {
+    if (subTab !== "compress" || !primaryPath) {
       setEstimate(null);
       return;
     }
@@ -157,7 +157,7 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
         useImportProgressStore.getState().cancelImport();
       }
     };
-  }, [primaryPath, toolKey, profile, customDpi, customJpegQuality, markToolFileImported]);
+  }, [subTab, primaryPath, toolKey, profile, customDpi, customJpegQuality, markToolFileImported]);
 
   const handlePickFiles = async () => {
     if (!isTauriRuntime()) {
@@ -424,7 +424,7 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
                 </span>
               </div>
               <p className="font-body-sm text-body-sm text-text-muted mt-0.5">
-                Target:{" "}
+                Active File:{" "}
                 <span className="font-mono-metric text-text-primary">
                   {primaryPath
                     ? `${primaryPath.split(/[\\/]/).pop()}${
@@ -438,8 +438,8 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {optimizePaths.length > 0 && (
+          {optimizePaths.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
                 onClick={handleClearFiles}
@@ -448,44 +448,53 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
                 <AppIcon name="close" className="w-4 h-4" />
                 <span>{optimizePaths.length > 1 ? "Clear All" : "Remove File"}</span>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={handlePickFiles}
-              className="px-3.5 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-primary font-body-sm text-body-sm flex items-center gap-1.5"
-            >
-              <AppIcon name="file_open" className="w-4 h-4 text-primary" />
-              <span>Select PDF(s)</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handlePickFiles}
+                className="px-3.5 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-primary font-body-sm text-body-sm flex items-center gap-1.5"
+              >
+                <AppIcon name="file_open" className="w-4 h-4 text-tag-optimize" />
+                <span>Select PDF(s)</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="inline-flex p-1 bg-surface-elevated rounded-lg border border-border-subtle self-start flex-wrap">
-          {(
-            [
-              { id: "compress", label: "Compress PDF" },
-              { id: "repair", label: "Repair Corrupt PDF" },
-              { id: "sanitize", label: "Sanitize Metadata" },
-              { id: "linearize", label: "Linearize Fast Web" },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                setSubTab(tab.id);
-                setResultMessage(null);
-                setErrorMessage(null);
-              }}
-              className={`px-3 py-1.5 rounded-md font-body-sm text-body-sm transition-colors ${
-                subTab === tab.id
-                  ? "bg-surface-active text-text-primary font-medium"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-space-md pt-2 border-t border-border-subtle">
+          <div className="inline-flex p-1 bg-surface-elevated rounded-lg border border-border-subtle flex-wrap">
+            {(
+              [
+                { id: "compress", label: "Compress PDF", icon: "compress" },
+                { id: "repair", label: "Repair Corrupt PDF", icon: "handyman" },
+                { id: "sanitize", label: "Sanitize Metadata", icon: "layers_clear" },
+                { id: "linearize", label: "Linearize Fast Web", icon: "speed" },
+              ] as const
+            ).map((tab) => {
+              const active = subTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setSubTab(tab.id);
+                    setResultMessage(null);
+                    setErrorMessage(null);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-body-sm text-body-sm transition-all ${
+                    active
+                      ? "bg-surface-active text-text-primary font-medium shadow-sm"
+                      : "text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  <AppIcon
+                    name={tab.icon}
+                    className={`w-4 h-4 ${active ? "text-tag-optimize" : ""}`}
+                  />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -494,7 +503,7 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
           <div className="bg-surface-card border border-border-default rounded-xl p-space-xl flex flex-col gap-space-md">
             <DropZoneWell
               title="Drag & drop PDF files here, or click to select for Optimize & Repair"
-              subtitle="Files queued here stay independent from Organize PDF Workspace."
+              subtitle="Drag & drop from Windows Explorer or click to browse PDF files (processed 100% offline)."
               onSelectFiles={handlePickFiles}
               accentClass="text-tag-optimize"
             />
@@ -579,7 +588,7 @@ export const OptimizeView: React.FC<OptimizeViewProps> = ({ onOpenFiles }) => {
               <CompressEstimateSummary estimate={estimate} />
             )}
 
-            {subTab === "compress" && (isExecuting || executionTicks > 0) && (
+            {subTab === "compress" && !isExecuting && executionTicks > 0 && (
               <div className="p-2.5 rounded-lg bg-surface-elevated border border-border-subtle flex items-center justify-between">
                 <span className="font-caption text-caption text-text-secondary">
                   Ghostscript Pipeline

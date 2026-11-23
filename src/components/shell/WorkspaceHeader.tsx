@@ -5,7 +5,6 @@ import { AppIcon } from "../common/AppIcon";
 
 interface WorkspaceHeaderProps {
   activeView: ActiveViewId;
-  onOpenFiles: () => void;
 }
 
 const VIEW_LABELS: Record<ActiveViewId, string> = {
@@ -20,10 +19,8 @@ const VIEW_LABELS: Record<ActiveViewId, string> = {
 
 export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
   activeView,
-  onOpenFiles,
 }) => {
   const telemetry = useTelemetryStore((s) => s.telemetry);
-  const toggleLogsDrawer = useTelemetryStore((s) => s.toggleLogsDrawer);
 
   return (
     <header className="fixed top-0 left-[250px] right-0 h-14 bg-bg-canvas/90 backdrop-blur-md border-b border-border-subtle z-30 flex items-center justify-between px-space-xl">
@@ -46,25 +43,6 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
             <span>Threads: {telemetry.activeWorkerThreads}</span>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => toggleLogsDrawer(true)}
-          title="Toggle Logs & Terminal (Ctrl+L)"
-          className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-elevated hover:bg-surface-hover text-text-secondary hover:text-text-primary border border-border-default font-caption text-caption transition-colors"
-        >
-          <AppIcon name="terminal" className="w-3.5 h-3.5 text-primary" />
-          <span>Logs</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenFiles}
-          className="inline-flex items-center gap-1.5 bg-primary-container hover:bg-primary-fixed transition-colors text-on-primary-container font-body-medium text-body-medium px-3.5 py-1.5 rounded-lg shadow-sm font-semibold"
-        >
-          <AppIcon name="file_open" className="w-[18px] h-[18px]" />
-          <span>Open Files (Ctrl+O)</span>
-        </button>
       </div>
     </header>
   );

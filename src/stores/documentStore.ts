@@ -79,6 +79,7 @@ interface DocumentState {
   toggleSplitPageSelection: (id: string) => void;
   selectAllSplitPages: () => void;
   clearSplitDocument: () => void;
+  sendActiveDocToSplit: () => void;
 
   setZoomPercent: (zoom: number) => void;
   setPreviewPageId: (id: string | null) => void;
@@ -318,7 +319,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
             !hadActiveDoc && firstDoc
               ? firstDoc.fileName.replace(/\.pdf$/i, "_organized.pdf")
               : state.outputFilename,
-          undoStack: [...state.undoStack, state.pages],
+          undoStack: [...state.undoStack.slice(-29), state.pages],
           redoStack: [],
           pages: nextPages,
           lastError: null,
@@ -427,6 +428,16 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       lastError: null,
     }),
 
+  sendActiveDocToSplit: () =>
+    set((state) => ({
+      splitDocId: state.activeDocId,
+      splitDocName: state.activeDocName,
+      splitDocPath: state.activeDocPath,
+      splitTotalBytes: state.totalBytes,
+      splitPages: state.pages.map((p) => ({ ...p })),
+      lastError: null,
+    })),
+
   removeMergeQueueItem: (docId) =>
     set((state) => ({
       mergeQueue: state.mergeQueue.filter((item) => item.docId !== docId),
@@ -483,7 +494,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   resetOrder: () =>
     set((state) => ({
-      undoStack: [...state.undoStack, state.pages],
+      undoStack: [...state.undoStack.slice(-29), state.pages],
       redoStack: [],
       pages:
         state.initialPages.length > 0 ? state.initialPages : state.pages,
@@ -495,7 +506,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       const newIndex = state.pages.findIndex((p) => p.id === overId);
       if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return state;
       return {
-        undoStack: [...state.undoStack, state.pages],
+        undoStack: [...state.undoStack.slice(-29), state.pages],
         redoStack: [],
         pages: arrayMove(state.pages, oldIndex, newIndex),
       };
@@ -503,7 +514,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   rotatePage: (id, delta) =>
     set((state) => ({
-      undoStack: [...state.undoStack, state.pages],
+      undoStack: [...state.undoStack.slice(-29), state.pages],
       redoStack: [],
       pages: state.pages.map((p) =>
         p.id === id
@@ -523,7 +534,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set((state) => {
       if (!state.pages.some((p) => p.selected)) return state;
       return {
-        undoStack: [...state.undoStack, state.pages],
+        undoStack: [...state.undoStack.slice(-29), state.pages],
         redoStack: [],
         pages: state.pages.map((p) =>
           p.selected
@@ -544,7 +555,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set((state) => {
       if (!state.pages.some((p) => p.selected)) return state;
       return {
-        undoStack: [...state.undoStack, state.pages],
+        undoStack: [...state.undoStack.slice(-29), state.pages],
         redoStack: [],
         pages: state.pages.map((p) =>
           p.selected
@@ -574,7 +585,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       const next = [...state.pages];
       next.splice(idx + 1, 0, copy);
       return {
-        undoStack: [...state.undoStack, state.pages],
+        undoStack: [...state.undoStack.slice(-29), state.pages],
         redoStack: [],
         pages: next,
       };
@@ -584,7 +595,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set((state) => {
       if (state.pages.length <= 1) return state;
       return {
-        undoStack: [...state.undoStack, state.pages],
+        undoStack: [...state.undoStack.slice(-29), state.pages],
         redoStack: [],
         pages: state.pages.filter((p) => p.id !== id),
       };
@@ -597,7 +608,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         return state;
       }
       return {
-        undoStack: [...state.undoStack, state.pages],
+        undoStack: [...state.undoStack.slice(-29), state.pages],
         redoStack: [],
         pages: remaining,
       };
@@ -613,7 +624,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       const { top, bottom, left, right } = state.cropMargins;
       const hasSel = state.pages.some((p) => p.selected);
       return {
-        undoStack: [...state.undoStack, state.pages],
+        undoStack: [...state.undoStack.slice(-29), state.pages],
         redoStack: [],
         pages: state.pages.map((p) => {
           if (hasSel && !p.selected) return p;
@@ -630,7 +641,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   resetCropOnSelected: () =>
     set((state) => ({
-      undoStack: [...state.undoStack, state.pages],
+      undoStack: [...state.undoStack.slice(-29), state.pages],
       redoStack: [],
       pages: state.pages.map((p) =>
         p.selected ? { ...p, cropBox: undefined } : p
@@ -653,7 +664,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       if (state.redoStack.length === 0) return state;
       const next = state.redoStack[state.redoStack.length - 1];
       return {
-        undoStack: [...state.undoStack, state.pages],
+        undoStack: [...state.undoStack.slice(-29), state.pages],
         redoStack: state.redoStack.slice(0, -1),
         pages: next,
       };
@@ -687,7 +698,12 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     const state = get();
     const safeOutDir = outputDir || "Exports";
     const sep = safeOutDir.includes("\\") ? "\\" : "/";
-    const cleanName = state.outputFilename.trim() || "XENON_organized.pdf";
+    const rawName = state.outputFilename.trim() || "XENON_organized.pdf";
+    const needsPdfExt = subTab !== "split" || state.mergeExtractedIntoSinglePdf;
+    const cleanName =
+      needsPdfExt && !rawName.toLowerCase().endsWith(".pdf")
+        ? `${rawName}.pdf`
+        : rawName;
     let outPath = `${safeOutDir}${sep}${cleanName}`;
 
     const modalStore = useProcessModalStore.getState();

@@ -62,9 +62,15 @@ pub fn sweep_orphaned_part_files(cache_dir: &Path) -> Result<usize, AppError> {
         let path = entry.path();
         if path.is_file() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.ends_with(".part")
+                let is_orphan_temp = name.ends_with(".part")
                     || (name.starts_with("vstamp_") && name.ends_with(".pdf"))
-                {
+                    || (name.starts_with("gs_stage_") && name.ends_with(".pdf"))
+                    || (name.starts_with("ocr_stage_") && name.ends_with(".pdf"))
+                    || (name.starts_with("img_insert_") && name.ends_with(".pdf"))
+                    || (name.starts_with("pdfa_def_") && name.ends_with(".ps"))
+                    || (name.starts_with("qpdf_args_") && name.ends_with(".txt"))
+                    || (name.starts_with("qpdf_pwd_") && name.ends_with(".txt"));
+                if is_orphan_temp {
                     fs::remove_file(&path)?;
                     removed += 1;
                 }
@@ -84,6 +90,21 @@ pub fn sweep_startup_crash_artifacts(cache_dir: &Path, output_dir: &Path) -> Res
             if path.is_file() {
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                     if name.ends_with(".part") {
+                        fs::remove_file(&path)?;
+                        removed += 1;
+                    }
+                }
+            }
+        }
+    }
+    let unlock_dir = std::env::temp_dir().join("xenon_unlock");
+    if unlock_dir.exists() && unlock_dir != cache_dir {
+        for entry in fs::read_dir(&unlock_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with("unlock_") && name.ends_with(".pdf") {
                         fs::remove_file(&path)?;
                         removed += 1;
                     }

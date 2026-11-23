@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { runWithMinimumProgress } from "../../lib/progressTiming";
 import { getXenonTileUrl, tauriClient } from "../../lib/tauriClient";
 import { useProcessModalStore } from "../../stores/processModalStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import type { FormFieldSpec } from "../../types/xenon";
 import { AppIcon } from "../common/AppIcon";
 import {
@@ -28,10 +29,11 @@ export const FormEditorCanvas: React.FC<FormEditorCanvasProps> = ({
   onChangeOutputFilename,
   onSaved,
 }) => {
+  const defaultFlatten = useSettingsStore((s) => s.settings.autoFlattenOnSave);
   const [fields, setFields] = useState<FormFieldSpec[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activePage, setActivePage] = useState(1);
-  const [flattenOnSave, setFlattenOnSave] = useState(false);
+  const [flattenOnSave, setFlattenOnSave] = useState(defaultFlatten);
   const [isSaving, setIsSaving] = useState(false);
   const [savingPercent, setSavingPercent] = useState(0);
   const canvasRef = useRef<HTMLDivElement | null>(null);

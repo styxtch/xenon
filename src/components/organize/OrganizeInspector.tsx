@@ -8,7 +8,6 @@ import {
 } from "../../stores/documentStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { AppIcon } from "../common/AppIcon";
-import { SegmentedTickProgress } from "../common/SegmentedTickProgress";
 
 interface OrganizeInspectorProps {
   activeSubTab: OrganizeSubTab;
@@ -23,6 +22,8 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
 }) => {
   const pages = useDocumentStore((s) => s.pages);
   const splitPages = useDocumentStore((s) => s.splitPages);
+  const totalBytes = useDocumentStore((s) => s.totalBytes);
+  const splitTotalBytes = useDocumentStore((s) => s.splitTotalBytes);
   const mergeQueue = useDocumentStore((s) => s.mergeQueue);
   const undoStack = useDocumentStore((s) => s.undoStack);
   const redoStack = useDocumentStore((s) => s.redoStack);
@@ -59,6 +60,7 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
   const applyCropToSelected = useDocumentStore((s) => s.applyCropToSelected);
   const resetCropOnSelected = useDocumentStore((s) => s.resetCropOnSelected);
   const setOutputFilename = useDocumentStore((s) => s.setOutputFilename);
+  const sendActiveDocToSplit = useDocumentStore((s) => s.sendActiveDocToSplit);
 
   const destinationFolder = useSettingsStore(
     (s) => s.settings.primaryDestinationFolder
@@ -78,13 +80,20 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
       : activeSubTab === "split"
         ? splitPages.length
         : pages.length;
-  const estimatedBytes = hasInput ? Math.max(24_000, pageTotal * 185_000) : 0;
+  const estimatedBytes = !hasInput
+    ? 0
+    : activeSubTab === "merge"
+      ? mergeQueue.reduce((acc, m) => acc + m.fileSizeBytes, 0)
+      : activeSubTab === "split"
+        ? splitTotalBytes
+        : totalBytes;
 
   const handleBrowseFolder = async () => {
     if (!isTauriRuntime()) return;
     const picked = await open({ directory: true, multiple: false });
     if (typeof picked === "string") {
       updateSetting("primaryDestinationFolder", picked);
+      void useSettingsStore.getState().saveSettings();
     }
   };
 
@@ -132,6 +141,7 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
             type="button"
             disabled={selectedPages.length === 0}
             onClick={() => {
+              sendActiveDocToSplit();
               setSplitMode("extract_selected");
               onSwitchSubTab("split");
             }}
@@ -434,17 +444,25 @@ export const OrganizeInspector: React.FC<OrganizeInspectorProps> = ({
           )}
         </div>
 
-        {(isExecuting || executionTicks > 0) && (
-          <div className="p-2.5 rounded-lg bg-surface-elevated border border-border-subtle flex items-center justify-between">
-            <span className="font-caption text-caption text-text-secondary">
-              Pipeline Progress
-            </span>
-            <SegmentedTickProgress
-              completedTicks={executionTicks}
-              percentage={executionTicks * 10}
-              status={isExecuting ? "processing" : "completed"}
-              category="organize"
-            />
+        {isExecuting && (
+          <div className="p-2.5 rounded-lg bg-surface-elevated border border-primary/30 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <AppIcon name="refresh" className="w-4 h-4 text-primary animate-spin shrink-0" />
+                <span className="font-caption text-caption text-text-primary font-medium truncate">
+                  Processing locally...
+                </span>
+              </div>
+              <span className="font-mono-metric text-[11px] text-primary shrink-0">
+                {Math.min(100, Math.round(executionTicks * 10))}%
+              </span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-surface-container overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-150"
+                style={{ width: `${Math.max(5, Math.min(100, executionTicks * 10))}%` }}
+              />
+            </div>
           </div>
         )}
 

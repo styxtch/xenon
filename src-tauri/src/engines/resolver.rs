@@ -259,7 +259,7 @@ fn verify_sha256_against_manifest(
     };
     match manifest.files.get(file_name) {
         Some(entry) => entry.sha256.eq_ignore_ascii_case(sha),
-        None => true,
+        None => false,
     }
 }
 
@@ -269,22 +269,46 @@ pub fn verify_all_engines(paths: &EnginePaths) -> Vec<EngineDiagnosticStatus> {
     let gs_sha = compute_file_sha256(&paths.gs_bin).ok();
     let gs_manifest_ok =
         verify_sha256_against_manifest(manifest.as_ref(), &paths.gs_bin, gs_sha.as_deref());
+    let gs_dll_path = paths.lib_dir.join("gsdll64.dll");
     let gs_dll_ok = if cfg!(target_os = "windows") {
-        std::fs::metadata(paths.lib_dir.join("gsdll64.dll"))
+        std::fs::metadata(&gs_dll_path)
             .map(|m| m.len() > 1_000_000)
             .unwrap_or(false)
+            && verify_sha256_against_manifest(
+                manifest.as_ref(),
+                &gs_dll_path,
+                compute_file_sha256(&gs_dll_path).ok().as_deref(),
+            )
     } else {
         true
     };
-    let tess_ok = std::fs::metadata(paths.tessdata_dir.join("eng.traineddata"))
+    let eng_path = paths.tessdata_dir.join("eng.traineddata");
+    let ind_path = paths.tessdata_dir.join("ind.traineddata");
+    let icc_path = paths.icc_dir.join("sRGB.icc");
+    let tess_ok = std::fs::metadata(&eng_path)
         .map(|m| m.len() > 10_000)
         .unwrap_or(false)
-        && std::fs::metadata(paths.tessdata_dir.join("ind.traineddata"))
+        && verify_sha256_against_manifest(
+            manifest.as_ref(),
+            &eng_path,
+            compute_file_sha256(&eng_path).ok().as_deref(),
+        )
+        && std::fs::metadata(&ind_path)
             .map(|m| m.len() > 10_000)
             .unwrap_or(false)
-        && std::fs::metadata(paths.icc_dir.join("sRGB.icc"))
+        && verify_sha256_against_manifest(
+            manifest.as_ref(),
+            &ind_path,
+            compute_file_sha256(&ind_path).ok().as_deref(),
+        )
+        && std::fs::metadata(&icc_path)
             .map(|m| m.len() > 500)
-            .unwrap_or(false);
+            .unwrap_or(false)
+        && verify_sha256_against_manifest(
+            manifest.as_ref(),
+            &icc_path,
+            compute_file_sha256(&icc_path).ok().as_deref(),
+        );
     let gs_ver = run_sidecar_version(&paths.gs_bin, paths).ok();
     let gs_ok = is_real_binary(&paths.gs_bin)
         && gs_sha.is_some()
@@ -310,9 +334,15 @@ pub fn verify_all_engines(paths: &EnginePaths) -> Vec<EngineDiagnosticStatus> {
             .filter_map(|e| e.ok())
             .any(|e| {
                 let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+                let path = e.path();
                 name.contains("qpdf")
                     && name.ends_with(".dll")
                     && e.metadata().map(|m| m.len() > 100_000).unwrap_or(false)
+                    && verify_sha256_against_manifest(
+                        manifest.as_ref(),
+                        &path,
+                        compute_file_sha256(&path).ok().as_deref(),
+                    )
             })
     } else {
         true
@@ -462,7 +492,7 @@ pub fn test_engine_binary(paths: &EnginePaths, engine_name: &str) -> Result<Engi
             };
             Ok(EngineTestResult {
                 name: "pdfium".to_string(),
-                success: true,
+                success: ffi_ok,
                 version: "v124.0.6".to_string(),
                 binary_path: lib_path.to_string_lossy().to_string(),
                 sha256: sha,
@@ -541,6 +571,11 @@ mod tests {
             Some(&manifest),
             Path::new("qpdf.exe"),
             Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        ));
+        assert!(!verify_sha256_against_manifest(
+            Some(&manifest),
+            Path::new("unknown.exe"),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         ));
     }
 }

@@ -43,6 +43,7 @@ impl DatabaseState {
                 "
                 PRAGMA journal_mode = WAL;
                 PRAGMA synchronous = NORMAL;
+                PRAGMA busy_timeout = 5000;
 
                 CREATE TABLE IF NOT EXISTS job_history (
                     id TEXT PRIMARY KEY,
@@ -267,7 +268,8 @@ mod tests {
         assert!(demo.processed_today_count >= 3);
         assert!(demo.total_space_saved_bytes > 0);
         assert_eq!(demo.secured_files_count, 1);
-        assert_eq!(demo.weekly_throughput.len(), 5);
+        assert_eq!(demo.weekly_throughput.len(), 7);
+        assert!(demo.weekly_throughput.iter().map(|d| d.count).sum::<u32>() >= 3);
 
         db.set_demo_showcase_data(false).expect("disable showcase demo");
         assert!(!db.is_demo_showcase_enabled());

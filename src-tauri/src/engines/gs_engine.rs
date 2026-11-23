@@ -224,6 +224,10 @@ pub fn compress_pdf_file_with_control(
         return Err(err);
     }
 
+    if options.sanitize_metadata {
+        let _ = sanitize_pdf_metadata(&gs_stage_path, &gs_stage_path, temp_cache_dir);
+    }
+
     if options.linearize_fast_web {
         let mut qcmd = build_sidecar_command(&paths.qpdf_bin, paths);
         qcmd.arg("--linearize")
@@ -235,10 +239,6 @@ pub fn compress_pdf_file_with_control(
     }
 
     let output_bytes = guard.commit()?;
-
-    if options.sanitize_metadata {
-        let _ = sanitize_pdf_metadata(&out_path, &out_path, temp_cache_dir);
-    }
 
     let final_bytes = std::fs::metadata(&out_path)
         .map(|m| m.len())
@@ -294,7 +294,19 @@ pub fn repair_pdf_with_control(
 
     let mut cmd = build_sidecar_command(&paths.qpdf_bin, paths);
     cmd.arg(input_path).arg(guard.part_path());
-    run_monitored_sidecar(cmd, job_id, process_registry, "QPDF", true)?;
+    let mut engine_label = "QPDF";
+    if run_monitored_sidecar(cmd, job_id, process_registry, "QPDF", true).is_err() {
+        let mut gs_cmd = build_sidecar_command(&paths.gs_bin, paths);
+        gs_cmd
+            .arg("-sDEVICE=pdfwrite")
+            .arg("-dNOPAUSE")
+            .arg("-dBATCH")
+            .arg("-dQUIET")
+            .arg(format!("-sOutputFile={}", guard.part_path().display()))
+            .arg(input_path);
+        run_monitored_sidecar(gs_cmd, job_id, process_registry, "Ghostscript", false)?;
+        engine_label = "Ghostscript Rewrite";
+    }
 
     let output_bytes = guard.commit()?;
     let doc = Document::load(output_path)
@@ -310,8 +322,7 @@ pub fn repair_pdf_with_control(
         output_bytes,
         duration_ms: start.elapsed().as_millis() as u64,
         command_log: format!(
-            "{} \"{}\" \"{}\"",
-            paths.qpdf_bin.display(),
+            "{engine_label} repair \"{}\" -> \"{}\"",
             input_path.display(),
             output_path.display()
         ),
@@ -594,7 +605,11 @@ fn run_gs_pdfa_stage(
         _ => "2",
     };
 
-    let icc_ps = icc_path.to_string_lossy().replace('\\', "/");
+    let icc_ps = icc_path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace('(', "\\(")
+        .replace(')', "\\)");
     let pdfa_def_path = temp_cache_dir.join(format!("pdfa_def_{}.ps", Uuid::new_v4()));
     let pdfa_def_ps = format!(
         r#"[ /_objdef {{icc_PDFA}} /type /stream /OBJ pdfmark

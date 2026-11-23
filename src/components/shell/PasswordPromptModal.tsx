@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useDocumentStore } from "../../stores/documentStore";
 import { AppIcon } from "../common/AppIcon";
 
@@ -11,6 +11,29 @@ export const PasswordPromptModal: React.FC = () => {
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const handleClose = () => {
+    setPassword("");
+    setLocalError("");
+    closePasswordPrompt();
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setPassword("");
+      setLocalError("");
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPassword("");
+        setLocalError("");
+        closePasswordPrompt();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, closePasswordPrompt]);
 
   if (!isOpen) return null;
 
@@ -58,7 +81,7 @@ export const PasswordPromptModal: React.FC = () => {
           </div>
           <button
             type="button"
-            onClick={closePasswordPrompt}
+            onClick={handleClose}
             className="text-text-muted hover:text-text-primary"
           >
             <AppIcon name="close" className="w-4 h-4" />
@@ -92,7 +115,7 @@ export const PasswordPromptModal: React.FC = () => {
         <div className="flex items-center justify-end gap-2 pt-2">
           <button
             type="button"
-            onClick={closePasswordPrompt}
+            onClick={handleClose}
             className="px-3.5 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover text-text-secondary font-body-sm text-body-sm border border-border-default"
           >
             Cancel

@@ -1,6 +1,4 @@
 use crate::error::AppError;
-use image::codecs::jpeg::JpegEncoder;
-use image::ExtendedColorType;
 use lopdf::content::{Content, Operation};
 use lopdf::{dictionary, Document, Object, ObjectId, Stream};
 use serde::{Deserialize, Serialize};
@@ -354,34 +352,69 @@ pub fn apply_watermark_to_pdf(
     });
 
     let mut image_xobject_id: Option<ObjectId> = None;
+    let mut image_dims: Option<(u32, u32)> = None;
     if spec.kind == "image" {
-        if let Some(img_path_str) = spec.image_path.as_deref().filter(|s| !s.is_empty()) {
-            let img_path = Path::new(img_path_str);
-            if img_path.exists() {
-                if let Ok(img) = image::open(img_path) {
-                    let rgb = img.to_rgb8();
-                    let (w, h) = rgb.dimensions();
-                    let mut jpeg_bytes = Vec::new();
-                    let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_bytes, 88);
-                    encoder
-                        .encode(rgb.as_raw(), w, h, ExtendedColorType::Rgb8)
-                        .map_err(|e| AppError::EngineError(e.to_string()))?;
-                    let xobj = doc.add_object(Stream::new(
-                        dictionary! {
-                            "Type" => "XObject",
-                            "Subtype" => "Image",
-                            "Width" => w as i64,
-                            "Height" => h as i64,
-                            "ColorSpace" => "DeviceRGB",
-                            "BitsPerComponent" => 8,
-                            "Filter" => "DCTDecode",
-                        },
-                        jpeg_bytes,
-                    ));
-                    image_xobject_id = Some(xobj);
-                }
+        let img_path_str = spec
+            .image_path
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::InvalidInput("Select a watermark image (PNG/JPG) first".to_string())
+            })?;
+        let img_path = Path::new(img_path_str);
+        if !img_path.exists() {
+            return Err(AppError::InvalidInput(format!(
+                "Watermark image not found: {}",
+                img_path.display()
+            )));
+        }
+        let rgba = image::open(img_path)
+            .map_err(|e| AppError::InvalidInput(format!("Failed to decode watermark image: {e}")))?
+            .to_rgba8();
+        let (w, h) = rgba.dimensions();
+        let mut rgb_bytes = Vec::with_capacity((w * h * 3) as usize);
+        let mut alpha_bytes = Vec::with_capacity((w * h) as usize);
+        let mut has_alpha = false;
+        for px in rgba.pixels() {
+            rgb_bytes.push(px[0]);
+            rgb_bytes.push(px[1]);
+            rgb_bytes.push(px[2]);
+            alpha_bytes.push(px[3]);
+            if px[3] < 255 {
+                has_alpha = true;
             }
         }
+        let mut smask_id: Option<ObjectId> = None;
+        if has_alpha {
+            let mut smask_stream = Stream::new(
+                dictionary! {
+                    "Type" => "XObject",
+                    "Subtype" => "Image",
+                    "Width" => w as i64,
+                    "Height" => h as i64,
+                    "ColorSpace" => "DeviceGray",
+                    "BitsPerComponent" => 8,
+                },
+                alpha_bytes,
+            );
+            let _ = smask_stream.compress();
+            smask_id = Some(doc.add_object(smask_stream));
+        }
+        let mut img_dict = dictionary! {
+            "Type" => "XObject",
+            "Subtype" => "Image",
+            "Width" => w as i64,
+            "Height" => h as i64,
+            "ColorSpace" => "DeviceRGB",
+            "BitsPerComponent" => 8,
+        };
+        if let Some(sid) = smask_id {
+            img_dict.set("SMask", Object::Reference(sid));
+        }
+        let mut img_stream = Stream::new(img_dict, rgb_bytes);
+        let _ = img_stream.compress();
+        image_xobject_id = Some(doc.add_object(img_stream));
+        image_dims = Some((w.max(1), h.max(1)));
     }
 
     let pages = doc.get_pages();
@@ -399,11 +432,14 @@ pub fn apply_watermark_to_pdf(
         let cos_t = theta.cos();
         let sin_t = theta.sin();
 
-        let ops = if let Some(_img_id) = image_xobject_id {
+        let ops = if image_xobject_id.is_some() {
+            let (iw, ih) = image_dims.unwrap_or((100, 100));
             let draw_w = page_w * 0.45;
-            let draw_h = draw_w * 0.6;
-            let tx = (page_w - draw_w) / 2.0;
-            let ty = (page_h - draw_h) / 2.0;
+            let draw_h = draw_w * (ih as f32 / iw as f32);
+            let cx = page_w / 2.0;
+            let cy = page_h / 2.0;
+            let tx = cx - (draw_w * cos_t - draw_h * sin_t) * 0.5;
+            let ty = cy - (draw_w * sin_t + draw_h * cos_t) * 0.5;
             vec![
                 Operation::new("q", vec![]),
                 Operation::new("gs", vec!["GSWm".into()]),
@@ -633,8 +669,15 @@ pub fn sign_pdf_incremental_pkcs12(
         .map_err(|e| AppError::EngineError(format!("Failed to parse PDF for signing: {e}")))?;
     let page_map = orig_doc.get_pages();
     let page_count = page_map.len() as u32;
-    let first_page_id = *page_map
-        .get(&1)
+    let target_page_num = sig_opts
+        .visual_stamp
+        .as_ref()
+        .map(|v| v.page)
+        .unwrap_or(1)
+        .clamp(1, page_count.max(1));
+    let target_page_id = *page_map
+        .get(&target_page_num)
+        .or_else(|| page_map.get(&1))
         .ok_or_else(|| AppError::EngineError("PDF has no pages to sign".to_string()))?;
     let root_id = orig_doc
         .trailer
@@ -692,7 +735,7 @@ pub fn sign_pdf_incremental_pkcs12(
     updated_root.set("AcroForm", Object::Dictionary(acroform));
 
     let mut updated_page = orig_doc
-        .get_dictionary(first_page_id)
+        .get_dictionary(target_page_id)
         .cloned()
         .unwrap_or_else(|_| lopdf::Dictionary::new());
     let mut annots = match updated_page.get(b"Annots").ok() {
@@ -738,8 +781,8 @@ pub fn sign_pdf_incremental_pkcs12(
     let widget_offset = out.len();
     let widget_obj = format!(
         "{widget_obj_num} 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /T (XENON_Sig_{sig_obj_num}) /F 132 /Rect {stamp_rect} /P {p0} {p1} R /V {sig_obj_num} 0 R >>\nendobj\n",
-        p0 = first_page_id.0,
-        p1 = first_page_id.1,
+        p0 = target_page_id.0,
+        p1 = target_page_id.1,
     );
     out.extend_from_slice(widget_obj.as_bytes());
 
@@ -747,12 +790,12 @@ pub fn sign_pdf_incremental_pkcs12(
     write_indirect_dict(root_id, &updated_root, &mut out);
 
     let page_offset = out.len();
-    write_indirect_dict(first_page_id, &updated_page, &mut out);
+    write_indirect_dict(target_page_id, &updated_page, &mut out);
 
     let xref_offset = out.len();
     let mut xref_entries = vec![
         (root_id.0, root_id.1, root_offset),
-        (first_page_id.0, first_page_id.1, page_offset),
+        (target_page_id.0, target_page_id.1, page_offset),
         (sig_obj_num, 0, sig_offset),
         (widget_obj_num, 0, widget_offset),
     ];
@@ -1044,6 +1087,138 @@ fn flatten_doc_in_memory(doc: &mut Document) -> usize {
     let mut count = 0_usize;
     let page_ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
     for page_id in page_ids {
+        let annot_refs: Vec<ObjectId> = {
+            let Ok(dict) = doc.get_dictionary(page_id) else {
+                continue;
+            };
+            match dict.get(b"Annots").ok() {
+                Some(Object::Array(arr)) => arr
+                    .iter()
+                    .filter_map(|o| o.as_reference().ok())
+                    .collect(),
+                Some(Object::Reference(arr_id)) => doc
+                    .get_object(*arr_id)
+                    .ok()
+                    .and_then(|o| o.as_array().ok())
+                    .map(|arr| arr.iter().filter_map(|o| o.as_reference().ok()).collect())
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            }
+        };
+
+        let mut baked_xobjs: Vec<(String, ObjectId, [f32; 4], [f32; 4])> = Vec::new();
+        for (idx, annot_id) in annot_refs.iter().enumerate() {
+            let Ok(annot_dict) = doc.get_dictionary(*annot_id).cloned() else {
+                continue;
+            };
+            let Some(rect_arr) = annot_dict.get(b"Rect").ok().and_then(|o| o.as_array().ok()) else {
+                continue;
+            };
+            if rect_arr.len() != 4 {
+                continue;
+            }
+            let rect = [
+                as_f32(&rect_arr[0]),
+                as_f32(&rect_arr[1]),
+                as_f32(&rect_arr[2]),
+                as_f32(&rect_arr[3]),
+            ];
+            let ap_n_ref = annot_dict
+                .get(b"AP")
+                .ok()
+                .and_then(|ap_obj| match ap_obj {
+                    Object::Dictionary(d) => Some(d.clone()),
+                    Object::Reference(id) => doc.get_dictionary(*id).ok().cloned(),
+                    _ => None,
+                })
+                .and_then(|ap_dict| ap_dict.get(b"N").ok().and_then(|o| o.as_reference().ok()));
+
+            let Some(ap_id) = ap_n_ref else {
+                continue;
+            };
+            let Ok(Object::Stream(mut form_stream)) = doc.get_object(ap_id).cloned() else {
+                continue;
+            };
+            let bbox = form_stream
+                .dict
+                .get(b"BBox")
+                .ok()
+                .and_then(|o| o.as_array().ok())
+                .filter(|a| a.len() == 4)
+                .map(|a| [as_f32(&a[0]), as_f32(&a[1]), as_f32(&a[2]), as_f32(&a[3])])
+                .unwrap_or([0.0, 0.0, (rect[2] - rect[0]).abs().max(1.0), (rect[3] - rect[1]).abs().max(1.0)]);
+
+            form_stream.dict.set("Type", "XObject");
+            form_stream.dict.set("Subtype", "Form");
+            if !form_stream.dict.has(b"BBox") {
+                form_stream.dict.set(
+                    "BBox",
+                    vec![bbox[0].into(), bbox[1].into(), bbox[2].into(), bbox[3].into()],
+                );
+            }
+            let xobj_id = doc.add_object(Object::Stream(form_stream));
+            let xobj_name = format!("XenonFlat_{}_{}", annot_id.0, idx);
+            baked_xobjs.push((xobj_name, xobj_id, rect, bbox));
+        }
+
+        if !baked_xobjs.is_empty() {
+            let existing_res_ref = doc
+                .get_dictionary(page_id)
+                .ok()
+                .and_then(|d| d.get(b"Resources").ok())
+                .and_then(|o| o.as_reference().ok());
+
+            if let Some(res_id) = existing_res_ref {
+                if let Ok(res_dict) = doc.get_object_mut(res_id).and_then(|o| o.as_dict_mut()) {
+                    let mut xobjs = match res_dict.get(b"XObject").ok() {
+                        Some(Object::Dictionary(d)) => d.clone(),
+                        _ => lopdf::Dictionary::new(),
+                    };
+                    for (name, oid, _, _) in &baked_xobjs {
+                        xobjs.set(name.as_bytes(), Object::Reference(*oid));
+                    }
+                    res_dict.set("XObject", Object::Dictionary(xobjs));
+                }
+            } else if let Ok(page_dict) = doc.get_object_mut(page_id).and_then(|o| o.as_dict_mut()) {
+                let mut res_dict = match page_dict.get(b"Resources").ok() {
+                    Some(Object::Dictionary(d)) => d.clone(),
+                    _ => lopdf::Dictionary::new(),
+                };
+                let mut xobjs = match res_dict.get(b"XObject").ok() {
+                    Some(Object::Dictionary(d)) => d.clone(),
+                    _ => lopdf::Dictionary::new(),
+                };
+                for (name, oid, _, _) in &baked_xobjs {
+                    xobjs.set(name.as_bytes(), Object::Reference(*oid));
+                }
+                res_dict.set("XObject", Object::Dictionary(xobjs));
+                page_dict.set("Resources", Object::Dictionary(res_dict));
+            }
+
+            let mut ops = Vec::new();
+            for (name, _, rect, bbox) in &baked_xobjs {
+                let rw = (rect[2] - rect[0]).abs().max(1.0);
+                let rh = (rect[3] - rect[1]).abs().max(1.0);
+                let bw = (bbox[2] - bbox[0]).abs().max(1.0);
+                let bh = (bbox[3] - bbox[1]).abs().max(1.0);
+                let sx = rw / bw;
+                let sy = rh / bh;
+                let tx = rect[0].min(rect[2]) - bbox[0].min(bbox[2]) * sx;
+                let ty = rect[1].min(rect[3]) - bbox[1].min(bbox[3]) * sy;
+                ops.push(Operation::new("q", vec![]));
+                ops.push(Operation::new(
+                    "cm",
+                    vec![sx.into(), 0.into(), 0.into(), sy.into(), tx.into(), ty.into()],
+                ));
+                ops.push(Operation::new("Do", vec![Object::Name(name.as_bytes().to_vec())]));
+                ops.push(Operation::new("Q", vec![]));
+            }
+            if let Ok(bytes) = (Content { operations: ops }).encode() {
+                let stream_id = doc.add_object(Stream::new(dictionary! {}, bytes));
+                let _ = attach_content_stream(doc, page_id, stream_id, false);
+            }
+        }
+
         if let Ok(dict) = doc.get_dictionary_mut(page_id) {
             if let Some(removed) = dict.remove(b"Annots") {
                 if let Ok(arr) = removed.as_array() {
@@ -1257,6 +1432,45 @@ pub fn save_pdf_form_fields(
 
     let page_map = doc.get_pages();
     let page_count = page_map.len() as u32;
+    // Strip existing Widget annotations once per page so repeated form saves do not duplicate widgets
+    for &page_id in page_map.values() {
+        let existing_annots = doc
+            .get_dictionary(page_id)
+            .ok()
+            .and_then(|d| d.get(b"Annots").ok())
+            .cloned();
+        let raw_arr = match existing_annots {
+            Some(Object::Array(a)) => a,
+            Some(Object::Reference(id)) => doc
+                .get_object(id)
+                .ok()
+                .and_then(|o| o.as_array().ok())
+                .cloned()
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        if !raw_arr.is_empty() {
+            let kept: Vec<Object> = raw_arr
+                .into_iter()
+                .filter(|obj| {
+                    let Ok(aid) = obj.as_reference() else {
+                        return true;
+                    };
+                    let is_widget = doc
+                        .get_dictionary(aid)
+                        .ok()
+                        .and_then(|d| d.get(b"Subtype").ok())
+                        .and_then(|s| s.as_name().ok())
+                        .map(|n| n == b"Widget")
+                        .unwrap_or(false);
+                    !is_widget
+                })
+                .collect();
+            if let Ok(page_dict) = doc.get_dictionary_mut(page_id) {
+                page_dict.set("Annots", kept);
+            }
+        }
+    }
     let mut acroform_fields: Vec<Object> = Vec::new();
 
     for field in fields {

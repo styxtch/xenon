@@ -25,8 +25,8 @@ export const ProcessFeedbackModal: React.FC = () => {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
         <div className="w-full max-w-xl rounded-xl border border-border-default bg-surface-card shadow-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-border-subtle flex items-center gap-3 bg-amber-500/10">
-            <div className="w-9 h-9 rounded-lg bg-amber-500/15 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-400">
+          <div className="px-5 py-4 border-b border-border-subtle flex items-center gap-3 bg-tag-optimize/10">
+            <div className="w-9 h-9 rounded-lg bg-tag-optimize/15 border border-tag-optimize/40 flex items-center justify-center shrink-0 text-tag-optimize">
               <AppIcon name="warning" className="w-5 h-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -46,7 +46,7 @@ export const ProcessFeedbackModal: React.FC = () => {
                   key={p}
                   className="font-mono-metric text-caption text-text-primary break-all flex items-start gap-2"
                 >
-                  <AppIcon name="description" className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                  <AppIcon name="description" className="w-3.5 h-3.5 text-tag-optimize shrink-0 mt-0.5" />
                   <span>{p}</span>
                 </div>
               ))}
@@ -77,7 +77,7 @@ export const ProcessFeedbackModal: React.FC = () => {
             <button
               type="button"
               onClick={() => resolveOverwrite("overwrite")}
-              className="px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-body-sm text-body-sm font-semibold flex items-center gap-1.5 whitespace-nowrap shadow-sm transition-colors"
+              className="px-3.5 py-2 rounded-lg bg-tag-optimize hover:bg-tag-optimize/90 text-bg-canvas font-body-sm text-body-sm font-semibold flex items-center gap-1.5 whitespace-nowrap shadow-sm transition-colors"
             >
               <AppIcon name="bolt" className="w-4 h-4" />
               <span>Overwrite &amp; Proceed</span>
@@ -108,7 +108,7 @@ export const ProcessFeedbackModal: React.FC = () => {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4">
         <div className="w-full max-w-lg rounded-xl border border-border-default bg-surface-card shadow-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-border-subtle flex items-center gap-3 bg-surface-elevated/70">
-            <div className="w-9 h-9 rounded-lg bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center shrink-0 text-emerald-400">
+            <div className="w-9 h-9 rounded-lg bg-status-success/15 border border-status-success/40 flex items-center justify-center shrink-0 text-status-success">
               <AppIcon name="check_circle" className="w-5 h-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -144,7 +144,7 @@ export const ProcessFeedbackModal: React.FC = () => {
                     <div className="font-caption text-caption text-text-muted">
                       Output{deltaPct !== null ? ` (${deltaPct > 0 ? `+${deltaPct}%` : `${deltaPct}%`})` : ""}
                     </div>
-                    <div className="text-sm font-semibold text-emerald-400 font-mono-metric">
+                    <div className="text-sm font-semibold text-status-success font-mono-metric">
                       {formatBytes(completionModal.outputBytes!)}
                     </div>
                   </div>

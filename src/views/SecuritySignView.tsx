@@ -41,12 +41,22 @@ const EMPTY_PATHS: string[] = [];
 export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
   onOpenFiles,
 }) => {
+  const settings = useSettingsStore((s) => s.settings);
+  const updateSetting = useSettingsStore((s) => s.updateSetting);
+  const initialEncLevel: "aes-256" | "aes-128" | "pdf2-aes256" =
+    settings.defaultEncryptionLevel === "aes-128" ||
+      settings.defaultEncryptionLevel === "pdf2-aes256"
+      ? settings.defaultEncryptionLevel
+      : "aes-256";
+
   const [subTab, setSubTab] = useState<SecuritySubTab>("protect");
   const [outputFilename, setOutputFilename] = useState<string>("");
   const [previewDocId, setPreviewDocId] = useState<string>("");
 
   // Protect AES-256 state
-  const [encLevel, setEncLevel] = useState<"aes-256" | "aes-128" | "pdf2-aes256">("aes-256");
+  const [encLevel, setEncLevel] = useState<"aes-256" | "aes-128" | "pdf2-aes256">(
+    initialEncLevel
+  );
   const [userPassword, setUserPassword] = useState("");
   const [ownerPassword, setOwnerPassword] = useState("");
   const [allowPrint, setAllowPrint] = useState(true);
@@ -58,8 +68,6 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
   const [unlockPassword, setUnlockPassword] = useState("");
 
   // Signature state
-  const settings = useSettingsStore((s) => s.settings);
-  const updateSetting = useSettingsStore((s) => s.updateSetting);
   const [p12Path, setP12Path] = useState(settings.p12KeystorePath);
   const [p12Subject, setP12Subject] = useState(settings.p12KeystoreSubject);
   const [p12Passphrase, setP12Passphrase] = useState("");
@@ -76,6 +84,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
   // Watermark state
   const [wmKind, setWmKind] = useState<"text" | "image">("text");
   const [wmText, setWmText] = useState("CONFIDENTIAL — XENON");
+  const [wmImagePath, setWmImagePath] = useState("");
   const [wmFontSize, setWmFontSize] = useState(44);
   const [wmColorHex, setWmColorHex] = useState("#4EDEA3");
   const [wmOpacity, setWmOpacity] = useState(0.35);
@@ -205,7 +214,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
         const certs = droppedPaths.filter(isP12Path);
 
         if (pdfs.length > 0) {
-          setSecurityPdfPath(pdfs[0]);
+          setToolFiles(toolKey, [pdfs[0]]);
           setResultMessage(null);
           setErrorMessage(null);
         }
@@ -222,7 +231,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
       },
       "Drop a PDF file (or .p12/.pfx certificate) into Security & Sign"
     );
-  }, [setSecurityPdfPath]);
+  }, [toolKey, setToolFiles]);
 
   const getResolvedOutputPath = (fallbackSuffix: string, overrideName?: string) => {
     const fallbackName =
@@ -491,7 +500,8 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
             outputPath: finalOutPath,
             watermark: {
               kind: wmKind,
-              text: wmText,
+              text: wmKind === "text" ? wmText : undefined,
+              imagePath: wmKind === "image" ? wmImagePath || undefined : undefined,
               opacity: wmOpacity,
               rotationDeg: wmRotation,
               fontSizePts: wmFontSize,
@@ -642,7 +652,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                 </span>
               </div>
               <p className="font-body-sm text-body-sm text-text-muted mt-0.5">
-                Active PDF:{" "}
+                Active File:{" "}
                 <span className="font-mono-metric text-text-primary">
                   {securityPdfPath
                     ? securityPdfPath.split(/[\\/]/).pop()
@@ -652,56 +662,67 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {securityPdfPath && (
+          {(Boolean(securityPdfPath) || subTab === "watermark" || subTab === "redact") && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {securityPdfPath && (
+                <button
+                  type="button"
+                  onClick={handleClearPdf}
+                  className="px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border-default hover:border-status-danger/50 text-text-secondary hover:text-error font-body-sm text-body-sm flex items-center gap-1.5 transition-colors"
+                >
+                  <AppIcon name="close" className="w-4 h-4" />
+                  <span>Remove File</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={handleClearPdf}
-                className="px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border-default hover:border-status-danger/50 text-text-secondary hover:text-error font-body-sm text-body-sm flex items-center gap-1.5 transition-colors"
+                onClick={handlePickPdf}
+                className="px-3.5 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-primary font-body-sm text-body-sm flex items-center gap-1.5"
               >
-                <AppIcon name="close" className="w-4 h-4" />
-                <span>Remove File</span>
+                <AppIcon name="file_open" className="w-4 h-4 text-tag-security" />
+                <span>Select PDF</span>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={handlePickPdf}
-              className="px-3.5 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-primary font-body-sm text-body-sm flex items-center gap-1.5"
-            >
-              <AppIcon name="file_open" className="w-4 h-4 text-primary" />
-              <span>Select PDF</span>
-            </button>
-          </div>
+            </div>
+          )}
         </div>
 
-        <div className="inline-flex p-1 bg-surface-elevated rounded-lg border border-border-subtle self-start flex-wrap">
-          {(
-            [
-              { id: "protect", label: "Protect AES-256" },
-              { id: "unlock", label: "Unlock PDF" },
-              { id: "vsign", label: "Visual Sign (PNG/JPG)" },
-              { id: "sign", label: "Digital Sign (.p12)" },
-              { id: "watermark", label: "Watermark & Flatten" },
-              { id: "redact", label: "True Redaction" },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                setSubTab(tab.id);
-                setResultMessage(null);
-                setErrorMessage(null);
-              }}
-              className={`px-3 py-1.5 rounded-md font-body-sm text-body-sm transition-colors ${
-                subTab === tab.id
-                  ? "bg-surface-active text-text-primary font-medium"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-space-md pt-2 border-t border-border-subtle">
+          <div className="inline-flex p-1 bg-surface-elevated rounded-lg border border-border-subtle flex-wrap">
+            {(
+              [
+                { id: "protect", label: "Protect AES-256", icon: "lock" },
+                { id: "unlock", label: "Unlock PDF", icon: "vpn_key" },
+                { id: "vsign", label: "Visual Sign (PNG/JPG)", icon: "draw" },
+                { id: "sign", label: "Digital Sign (.p12)", icon: "verified_user" },
+                { id: "watermark", label: "Watermark & Flatten", icon: "layers" },
+                { id: "redact", label: "True Redaction", icon: "shield" },
+              ] as const
+            ).map((tab) => {
+              const active = subTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setSubTab(tab.id);
+                    setResultMessage(null);
+                    setErrorMessage(null);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-body-sm text-body-sm transition-all ${
+                    active
+                      ? "bg-surface-active text-text-primary font-medium shadow-sm"
+                      : "text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  <AppIcon
+                    name={tab.icon}
+                    className={`w-4 h-4 ${active ? "text-tag-security" : ""}`}
+                  />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -720,53 +741,53 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
         <div className="flex flex-col gap-space-md">
           <InlineImportProgress />
           <RedactionCanvas
-          docId={previewDocId}
-          inputPdfPath={securityPdfPath}
-          pageCount={previewPageCount}
-          boxes={redactionBoxes}
-          preserveUnredactedText={preserveUnredactedText}
-          outputTargetCard={
-            <OutputTargetCard
-              outputFilename={outputFilename}
-              onChangeOutputFilename={setOutputFilename}
-              disabled={!securityPdfPath}
-              isProcessing={isExecuting}
-              processingPercent={processingPercent}
-              processingLabel="Burning 300 DPI redactions..."
-            >
-              <button
-                type="button"
-                onClick={() => void handleExecuteRedaction()}
-                disabled={
-                  isExecuting || !securityPdfPath || redactionBoxes.length === 0
-                }
-                className="w-full py-3 rounded-lg bg-error-container hover:bg-status-danger disabled:opacity-50 text-white font-headline-sm text-headline-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-all"
+            docId={previewDocId}
+            inputPdfPath={securityPdfPath}
+            pageCount={previewPageCount}
+            boxes={redactionBoxes}
+            preserveUnredactedText={preserveUnredactedText}
+            outputTargetCard={
+              <OutputTargetCard
+                outputFilename={outputFilename}
+                onChangeOutputFilename={setOutputFilename}
+                disabled={!securityPdfPath}
+                isProcessing={isExecuting}
+                processingPercent={processingPercent}
+                processingLabel="Burning 300 DPI redactions..."
               >
-                <AppIcon
-                  name={isExecuting ? "refresh" : "verified_user"}
-                  className={`w-5 h-5 ${isExecuting ? "animate-spin" : ""}`}
-                />
-                <span>
-                  {isExecuting
-                    ? "Burning 300 DPI Redactions..."
-                    : "Execute 300 DPI Burn-in"}
-                </span>
-              </button>
-            </OutputTargetCard>
-          }
-          onAddBox={(box) => setRedactionBoxes((prev) => [...prev, box])}
-          onAddBoxes={(items) => setRedactionBoxes((prev) => [...prev, ...items])}
-          onUpdateBox={(idx, next) =>
-            setRedactionBoxes((prev) =>
-              prev.map((item, i) => (i === idx ? next : item))
-            )
-          }
-          onRemoveBox={(idx) =>
-            setRedactionBoxes((prev) => prev.filter((_, i) => i !== idx))
-          }
-          onClearBoxes={() => setRedactionBoxes([])}
-          onTogglePreserveText={setPreserveUnredactedText}
-        />
+                <button
+                  type="button"
+                  onClick={() => void handleExecuteRedaction()}
+                  disabled={
+                    isExecuting || !securityPdfPath || redactionBoxes.length === 0
+                  }
+                  className="w-full py-3 rounded-lg bg-error-container hover:bg-status-danger disabled:opacity-50 text-white font-headline-sm text-headline-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-all"
+                >
+                  <AppIcon
+                    name={isExecuting ? "refresh" : "verified_user"}
+                    className={`w-5 h-5 ${isExecuting ? "animate-spin" : ""}`}
+                  />
+                  <span>
+                    {isExecuting
+                      ? "Burning 300 DPI Redactions..."
+                      : "Execute 300 DPI Burn-in"}
+                  </span>
+                </button>
+              </OutputTargetCard>
+            }
+            onAddBox={(box) => setRedactionBoxes((prev) => [...prev, box])}
+            onAddBoxes={(items) => setRedactionBoxes((prev) => [...prev, ...items])}
+            onUpdateBox={(idx, next) =>
+              setRedactionBoxes((prev) =>
+                prev.map((item, i) => (i === idx ? next : item))
+              )
+            }
+            onRemoveBox={(idx) =>
+              setRedactionBoxes((prev) => prev.filter((_, i) => i !== idx))
+            }
+            onClearBoxes={() => setRedactionBoxes([])}
+            onTogglePreserveText={setPreserveUnredactedText}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-space-lg items-start">
@@ -812,18 +833,43 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                   )}
 
                   {/* Live rotated overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span
-                      className="font-bold tracking-wider whitespace-nowrap select-none"
-                      style={{
-                        color: wmColorHex,
-                        opacity: wmOpacity,
-                        fontSize: `${Math.max(12, Math.round(wmFontSize * 0.45))}px`,
-                        transform: `rotate(${-wmRotation}deg)`,
-                      }}
-                    >
-                      {wmKind === "text" ? wmText || "WATERMARK" : "[IMAGE STAMP]"}
-                    </span>
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-4">
+                    {wmKind === "image" ? (
+                      wmImagePath && isTauriRuntime() ? (
+                        <img
+                          src={convertFileSrc(wmImagePath)}
+                          alt="Watermark preview"
+                          draggable={false}
+                          className="max-w-[55%] max-h-[55%] object-contain select-none"
+                          style={{
+                            opacity: wmOpacity,
+                            transform: `rotate(${-wmRotation}deg)`,
+                          }}
+                        />
+                      ) : (
+                        <span
+                          className="font-mono-metric text-caption px-2.5 py-1 rounded border border-dashed border-border-default text-text-muted select-none"
+                          style={{
+                            opacity: wmOpacity,
+                            transform: `rotate(${-wmRotation}deg)`,
+                          }}
+                        >
+                          Select PNG / JPG Watermark
+                        </span>
+                      )
+                    ) : (
+                      <span
+                        className="font-bold tracking-wider whitespace-nowrap select-none"
+                        style={{
+                          color: wmColorHex,
+                          opacity: wmOpacity,
+                          fontSize: `${Math.max(12, Math.round(wmFontSize * 0.45))}px`,
+                          transform: `rotate(${-wmRotation}deg)`,
+                        }}
+                      >
+                        {wmText || "WATERMARK"}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -832,7 +878,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                 {!securityPdfPath && (
                   <DropZoneWell
                     title="Drag & drop a PDF (or .p12/.pfx cert) here, or click to select"
-                    subtitle="Files opened here stay independent from Organize PDF Workspace."
+                    subtitle="Drag & drop from Windows Explorer or click to browse a PDF document or .p12/.pfx certificate."
                     onSelectFiles={handlePickPdf}
                     accentClass="text-tag-security"
                   />
@@ -1331,6 +1377,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                 <WatermarkInspector
                   kind={wmKind}
                   text={wmText}
+                  imagePath={wmImagePath}
                   fontSizePts={wmFontSize}
                   colorHex={wmColorHex}
                   opacity={wmOpacity}
@@ -1340,6 +1387,7 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                   flattenAll={flattenAll}
                   onChangeKind={setWmKind}
                   onChangeText={setWmText}
+                  onChangeImagePath={setWmImagePath}
                   onChangeFontSize={setWmFontSize}
                   onChangeColor={setWmColorHex}
                   onChangeOpacity={setWmOpacity}
@@ -1361,7 +1409,11 @@ export const SecuritySignView: React.FC<SecuritySignViewProps> = ({
                     <button
                       type="button"
                       onClick={() => void handleApplyWatermark()}
-                      disabled={isExecuting || !securityPdfPath}
+                      disabled={
+                        isExecuting ||
+                        !securityPdfPath ||
+                        (wmKind === "image" && !wmImagePath)
+                      }
                       className="w-full py-3 rounded-lg bg-primary-container hover:bg-primary-fixed disabled:opacity-50 text-on-primary-container font-headline-sm text-headline-sm font-semibold flex items-center justify-center gap-2 shadow-md transition-all"
                     >
                       <AppIcon name="bolt" className="w-5 h-5" />

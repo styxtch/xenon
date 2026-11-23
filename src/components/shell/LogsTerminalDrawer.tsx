@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTelemetryStore } from "../../stores/telemetryStore";
 import type { LogLevel } from "../../types/xenon";
 import { AppIcon } from "../common/AppIcon";
@@ -24,6 +24,15 @@ export const LogsTerminalDrawer: React.FC = () => {
 
   const [searchText, setSearchText] = useState("");
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") toggleLogsDrawer(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, toggleLogsDrawer]);
 
   const visibleLogs = useMemo(() => {
     const q = searchText.trim().toLowerCase();
@@ -56,8 +65,12 @@ export const LogsTerminalDrawer: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-[1px]">
+    <div
+      onClick={() => toggleLogsDrawer(false)}
+      className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-[1px]"
+    >
       <div
+        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[520px] h-full bg-surface-container-lowest border-l border-border-default flex flex-col shadow-2xl"
         role="dialog"
         aria-label="Engine Logs and Terminal"
@@ -144,7 +157,7 @@ export const LogsTerminalDrawer: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5 font-mono-metric text-caption">
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5 font-mono text-caption">
           {visibleLogs.length === 0 ? (
             <div className="h-full flex items-center justify-center text-text-muted">
               No log entries match the current filter.

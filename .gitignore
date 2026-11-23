@@ -26,9 +26,13 @@ desktop.ini
 *.swp
 *.swo
 
-# Internal Documentation
-Docs/
-docs/
+# Internal Documentation (keep screenshots for README, ignore PRD/design/etc.)
+Docs/*
+!Docs/screenshots/
+!Docs/screenshots/**
+docs/*
+!docs/screenshots/
+!docs/screenshots/**
 
 # Environment & Local Secrets
 .env

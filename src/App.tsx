@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AppIcon } from "./components/common/AppIcon";
-import { ImportProgressToast } from "./components/shell/ImportProgressToast";
 import { LogsTerminalDrawer } from "./components/shell/LogsTerminalDrawer";
 import { PasswordPromptModal } from "./components/shell/PasswordPromptModal";
 import { ProcessFeedbackModal } from "./components/shell/ProcessFeedbackModal";
@@ -27,13 +26,26 @@ import { useQueueStore } from "./stores/queueStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useTelemetryStore } from "./stores/telemetryStore";
 import type { ActiveViewId, EngineLogEntry, JobTickEvent } from "./types/xenon";
-import { BatchQueueView } from "./views/BatchQueueView";
-import { ConvertOcrView } from "./views/ConvertOcrView";
 import { DashboardView } from "./views/DashboardView";
-import { OptimizeView } from "./views/OptimizeView";
-import { OrganizeView } from "./views/OrganizeView";
-import { SecuritySignView } from "./views/SecuritySignView";
-import { SettingsView } from "./views/SettingsView";
+
+const BatchQueueView = lazy(() =>
+  import("./views/BatchQueueView").then((m) => ({ default: m.BatchQueueView }))
+);
+const OrganizeView = lazy(() =>
+  import("./views/OrganizeView").then((m) => ({ default: m.OrganizeView }))
+);
+const OptimizeView = lazy(() =>
+  import("./views/OptimizeView").then((m) => ({ default: m.OptimizeView }))
+);
+const ConvertOcrView = lazy(() =>
+  import("./views/ConvertOcrView").then((m) => ({ default: m.ConvertOcrView }))
+);
+const SecuritySignView = lazy(() =>
+  import("./views/SecuritySignView").then((m) => ({ default: m.SecuritySignView }))
+);
+const SettingsView = lazy(() =>
+  import("./views/SettingsView").then((m) => ({ default: m.SettingsView }))
+);
 
 export const App: React.FC = () => {
   const [activeView, setActiveView] = useState<ActiveViewId>("dashboard");
@@ -202,11 +214,11 @@ export const App: React.FC = () => {
       activeView === "optimize-repair" || activeView === "security-sign"
         ? [{ name: "PDF Documents", extensions: ["pdf"] }]
         : [
-            {
-              name: "PDF & Images",
-              extensions: ["pdf", "jpg", "jpeg", "png", "webp", "tiff", "bmp"],
-            },
-          ];
+          {
+            name: "PDF & Images",
+            extensions: ["pdf", "jpg", "jpeg", "png", "webp", "tiff", "bmp"],
+          },
+        ];
 
     const selected = await open({
       multiple: activeView !== "security-sign",
@@ -260,6 +272,9 @@ export const App: React.FC = () => {
     }
     setActiveView("organize-pdf");
   };
+
+  const openFilesRef = useRef<() => Promise<void>>(async () => { });
+  openFilesRef.current = handleOpenFiles;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -328,13 +343,31 @@ export const App: React.FC = () => {
         e.preventDefault();
         setActiveView("settings");
       } else if (key === "o") {
-        e.preventDefault();
-        void handleOpenFiles();
+        if (
+          activeView === "organize-pdf" ||
+          activeView === "optimize-repair" ||
+          activeView === "convert-ocr" ||
+          activeView === "security-sign"
+        ) {
+          e.preventDefault();
+          void openFilesRef.current();
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  });
+  }, [
+    activeView,
+    deleteSelected,
+    undo,
+    redo,
+    selectAllPages,
+    rotateSelectedRight,
+    executeActiveOperation,
+    settings.primaryDestinationFolder,
+    settings.outputNamingPattern,
+    toggleLogsDrawer,
+  ]);
 
   const renderActiveView = () => {
     switch (activeView) {
@@ -368,18 +401,22 @@ export const App: React.FC = () => {
         searchInputRef={searchInputRef}
       />
       <div className="pl-[250px]">
-        <WorkspaceHeader
-          activeView={activeView}
-          onOpenFiles={handleOpenFiles}
-        />
+        <WorkspaceHeader activeView={activeView} />
         <main className="w-full pt-16 min-h-screen px-space-xl pb-space-2xl bg-bg-canvas">
-          {renderActiveView()}
+          <Suspense
+            fallback={
+              <div className="py-12 text-center font-body-sm text-body-sm text-text-muted">
+                Loading workspace...
+              </div>
+            }
+          >
+            {renderActiveView()}
+          </Suspense>
         </main>
       </div>
       <LogsTerminalDrawer />
       <PasswordPromptModal />
       <ProcessFeedbackModal />
-      <ImportProgressToast />
 
       {isDraggingFiles && (
         <div className="pointer-events-none fixed inset-0 z-[100] bg-bg-canvas/75 backdrop-blur-[2px] p-6 flex items-center justify-center">

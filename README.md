@@ -2,67 +2,134 @@
 
 **Your Documents. Your Device. Your Privacy.**
 
-XENON is a 100% offline, open-source desktop PDF workspace built with **Tauri v2**, **React**, **TypeScript**, and **Rust**. All PDF processing engines, OCR language models, and ICC color profiles are bundled locally so your documents never leave your device.
+XENON is a 100% offline, open-source desktop PDF workstation built with **Tauri v2**, **React**, **TypeScript**, and **Rust**. Every PDF processing engine, OCR language dataset (`eng` + `ind`), and ICC color profile runs strictly on your local machine — zero cloud uploads, zero telemetry, and zero account requirements.
 
 ---
 
-## Core Bundled Engines
+## Screenshots
 
-1. **PDFium Engine (`pdfium-render` FFI)** — Sub-pixel page rasterization, custom `xenon://` tile cache, PDF-to-Images, character-level text bounding extraction, and High-DPI True Redaction burn-in.
-2. **QPDF Native CLI** — Fast structural normalization, page reorder/split/merge, stream linearization (Fast Web View), cross-reference (`xref`) repair, and AES-256 / AES-128 encryption & decryption.
-3. **Ghostscript (`gs`)** — High-ratio image downsampling (`Screen`, `Ebook`, `Printer`, `Prepress`, `Custom DPI/Quality`), ISO 19005 PDF/A archival conversion, and built-in Tesseract OCR (`eng` + `ind`).
-4. **Lopdf & Rust Crypto** — In-memory stream inspection, size estimation, XMP metadata sanitization, interactive AcroForm editor & flattening, visual PNG/JPG signature stamping, watermarks, and PKCS#12 (`.p12`/`.pfx`) CMS incremental digital signatures.
+### Dashboard & Analytics
+![XENON Dashboard](Docs/screenshots/dashboard.png)
 
----
-
-## Tool Suites
-
-- **Organize & Manage PDF Pages:** Visual Page Grid (`dnd-kit` drag-and-drop, Undo/Redo, multi-select, zoom), independent Merge Queue, independent Split & Extract (Range / Selected / Every N / Burst), and Crop & Rotate.
-- **Optimize & Repair:** Compress PDF with live stream size estimation, Repair corrupt `xref`, Sanitize hidden metadata/XMP, and Linearize for Fast Web View.
-- **Convert, OCR, Compare & AcroForm:** PDF ↔ Images (`PNG`, `JPG`, `WebP`, `TIFF`), Searchable OCR PDF, PDF/A archival, side-by-side PDF Comparison (Visual Diff + Semantic Text Diff), and interactive AcroForm Editor.
-- **Security & Sign:** AES-256/128 Encryption, Unlock PDF, Visual Signature (`PNG`/`JPG` drag & resize), PKCS#12 Digital Signature, Watermark & Flatten, and True Redaction (manual draw/move/resize + cross-page auto-redact for Text, Phone, Email, and ID/NIK).
+### Organize & Manage PDF Pages
+![XENON Organize PDF Pages](Docs/screenshots/organize.png)
 
 ---
 
-## Tech Stack
+## Key Features & Tool Suites
 
-- **Desktop Shell & Backend:** Rust + Tauri v2 + Tokio + SQLite (`rusqlite`)
-- **Frontend:** React + TypeScript + Tailwind CSS + Zustand + `@dnd-kit`
-- **Reliability & Security:** Atomic `.part` writes with startup crash recovery, SHA-256 binary integrity manifest verification, OS-level process control (`Pause` / `Resume` / `Cancel`).
+- **Organize & Manage PDF Pages**
+  - Visual Page Grid (`@dnd-kit` drag-and-drop reordering, multi-select, zoom controls, Undo/Redo)
+  - Independent Merge Files Queue with drag-to-reorder assembly
+  - Split & Extract (`Range`, `Extract Selected`, `Every N Pages`, `Burst`), plus visual CropBox & Rotate
+- **Optimize & Repair**
+  - Ghostscript-backed compression (`Screen`, `Ebook`, `Printer`, `Prepress`, or custom DPI & JPEG quality) with live stream size estimation
+  - Corrupt `xref` table & object reconstruction, XMP/hidden metadata sanitization, and Fast Web View linearization
+- **Convert, OCR, Compare & AcroForm**
+  - High-DPI PDF ↔ Image conversion (`PNG`, `JPEG`, `WebP`, `TIFF`, `BMP`)
+  - Searchable OCR PDF (`eng` + `ind`) & ISO 19005 PDF/A archival conversion (`pdfa-1b`, `pdfa-2b`, `pdfa-3b`)
+  - Side-by-side PDF revision comparison (Visual Pixel Diff heatmap + Semantic Text Diff)
+  - Interactive AcroForm field creator, drag placement, editor, and flattening
+- **Security, Digital Sign & Watermark**
+  - AES-256 / AES-128 & PDF 2.0 UTF-8 password encryption, permission controls, and PDF unlock
+  - Interactive Visual Signature (`PNG` / `JPG` drag-to-move & corner-resize)
+  - Incremental PKCS#12 (`.p12` / `.pfx`) CMS cryptographic signing
+  - Text & Image Watermarking with live preview and layer flattening
+  - **True Redaction**: manual draw/move/resize redaction boxes + cross-page auto-redact (`Text`, `Phone`, `Email`, `Digits/NIK`) with 300 DPI pixel burn-in
+- **Batch Queue & Process Control**
+  - Real-time progress tracking with OS-level process tree control (`Pause`, `Resume`, `Cancel`) via Win32 Job Objects / Unix Process Groups
 
 ---
 
-## Development & Build
+## Tech Stack & Architecture
 
-### Prerequisites
-- Node.js 20+
-- Rust stable toolchain (`cargo`, `rustc`)
-- Tauri v2 system prerequisites for your OS
+### 1. Application Layers
 
-### Commands
+| Layer | Technologies | Responsibilities |
+| :--- | :--- | :--- |
+| **Desktop Shell** | **Tauri v2** (Rust) | Sandboxed native window, OS file dialogs, desktop notifications, custom `xenon://` protocol |
+| **Frontend UI** | **React 19**, **TypeScript**, **Tailwind CSS**, **Zustand**, **@dnd-kit** | Obsidian Slate workspace, code-split tool suites, drag-and-drop page organizer, interactive redaction & signature canvases |
+| **Local Persistence** | **SQLite** (`rusqlite` with WAL mode) | Job execution history, space-saved analytics, rolling 7-day throughput telemetry, and persistent settings |
+| **Process Control** | **Tokio** + `windows-sys` / `libc` | Async job execution, real-time log streaming (`engine-log-line`), OS process suspension & termination |
+
+### 2. Core Bundled Engines (`0` External Dependencies)
+
+| Engine | Integration | Primary Capabilities |
+| :--- | :--- | :--- |
+| **PDFium (`pdfium-render`)** | Native Rust FFI (`pdfium.dll`) | Sub-pixel page tile rendering (`xenon://` LRU cache), PDF → Images, character-level text bounding lookup, 300 DPI True Redaction burn-in |
+| **QPDF (`qpdf`)** | Bundled Native CLI (`v12.4`) | Page reorder/merge/split/crop, Fast Web View linearization, structural `xref` recovery, AES-256/128 encryption & decryption |
+| **Ghostscript (`gswin64c`)** | Bundled Native CLI (`v10.05`) | Stream downsampling & compression, ISO PDF/A archival output, embedded Tesseract OCR (`eng` + `ind`) |
+| **Lopdf & Rust Crypto** | Pure Rust + `cms` / `p12` / `x509-cert` | Stream inspection, size estimation, XMP cleanup, AcroForm widget generation/flattening, visual stamps, watermarks, PKCS#12 CMS incremental signing |
+
+### 3. Security & Reliability Design
+
+- **Atomic File Writes (`.part`)**: Every output is written to a temporary `.part` file and atomically promoted upon completion; interrupted `.part` artifacts are automatically swept on startup or cancellation.
+- **Binary Integrity Verification**: Bundled engines are verified at startup and in Settings against SHA-256 checksums stored in `src-tauri/resources/integrity-manifest.json`.
+- **Zero Network Footprint**: Built strictly for local execution with no outbound API calls or cloud processing.
+
+---
+
+## Installation
+
+### End Users (Pre-built Installer)
+
+1. Go to the [**GitHub Releases**](../../releases) page and download the latest Windows installer:
+   - **`XENON_x.x.x_x64-setup.exe`** (NSIS Installer) or
+   - **`XENON_x.x.x_x64_en-US.msi`** (Windows MSI Installer)
+2. Run the installer and launch **XENON** — all PDF engines (`PDFium`, `QPDF`, `Ghostscript`, and `tessdata`) are already bundled inside.
+3. **Windows SmartScreen note**: Because installers are currently unsigned open-source builds, Windows Defender SmartScreen may display a prompt on first launch; click **More info → Run anyway** if you verified the release checksum from GitHub Releases.
+
+> **macOS & Linux:** Pre-built GitHub Release CI currently targets `windows-latest` while non-Windows engine binaries are finalized. macOS/Linux users can build directly from source using the steps below once platform binaries are supplied.
+
+---
+
+### Developers (Build from Source)
+
+#### Prerequisites
+- **Node.js 20+** and **npm**
+- **Rust** stable toolchain (`rustup`, `cargo`, `rustc`)
+- **Tauri v2** system prerequisites for your OS ([Tauri Prerequisites Guide](https://v2.tauri.app/start/prerequisites/))
+
+#### Setup & Commands
 
 ```bash
-# Install frontend dependencies
+# 1. Install frontend dependencies
 npm install
 
-# Run desktop app in development mode
+# 2. Run the desktop application in development mode
 npm run tauri dev
 
-# Typecheck and build frontend
+# 3. Typecheck and build the frontend bundle
 npm run build
 
-# Run Rust unit & engine tests
+# 4. Run Rust core, engine, and integrity unit tests
 npm run test:rust
 
-# Generate SHA-256 integrity manifest for bundled engines
+# 5. Regenerate SHA-256 binary integrity manifest (if bundled binaries change)
 npm run verify:integrity
 
-# Build production desktop installer
+# 6. Build the production desktop installer (.msi / .exe)
 npm run tauri build
 ```
 
 ---
 
+## Keyboard Shortcuts
+
+| Shortcut | Scope | Action |
+| :--- | :--- | :--- |
+| `Ctrl + O` | PDF Tool Suites | Open PDF / image files for the active suite |
+| `Ctrl + K` | Global | Focus quick command search in sidebar |
+| `Ctrl + L` | Global | Toggle Logs & Terminal drawer |
+| `Ctrl + ,` | Global | Open Settings & System Preferences |
+| `Ctrl + E` | Organize PDF Grid | Execute & Export current page arrangement |
+| `Ctrl + Z` / `Ctrl + Shift + Z` (`Ctrl + Y`) | Organize PDF Grid | Undo / Redo page actions |
+| `Ctrl + A` | Organize PDF Grid | Select all pages |
+| `Ctrl + R` | Organize PDF Grid | Rotate selected pages 90° clockwise |
+| `Delete` / `Backspace` | Organize PDF Grid | Remove selected pages from workspace |
+
+---
+
 ## License
 
-GNU AGPL-3.0-or-later (compatible with bundled Ghostscript).
+Licensed under **GNU AGPL-3.0-or-later** (compatible with bundled Ghostscript).

@@ -196,9 +196,11 @@ pub fn save_app_settings(
 pub fn restore_default_settings(
     app: AppHandle,
     db: State<'_, DatabaseState>,
+    registry: State<'_, PdfEngineRegistry>,
     logs: State<'_, LogBufferState>,
 ) -> Result<AppSettings, AppError> {
     let defaults = settings_repo::restore_defaults(&db)?;
+    registry.set_cache_limit_mb(defaults.memory_cache_limit_mb);
     push_and_emit_log(
         &app,
         &logs,
@@ -366,12 +368,8 @@ pub fn open_file_in_os(path: String) -> Result<(), AppError> {
     }
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        std::process::Command::new("cmd.exe")
-            .args(["/c", "start", ""])
+        std::process::Command::new("explorer.exe")
             .arg(&target)
-            .creation_flags(CREATE_NO_WINDOW)
             .spawn()?;
     }
     #[cfg(target_os = "macos")]

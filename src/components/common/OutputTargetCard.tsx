@@ -81,6 +81,7 @@ export const OutputTargetCard: React.FC<OutputTargetCardProps> = ({
         onChangeOutputFolder(picked);
       } else {
         updateSetting("primaryDestinationFolder", picked);
+        void useSettingsStore.getState().saveSettings();
       }
     }
   };

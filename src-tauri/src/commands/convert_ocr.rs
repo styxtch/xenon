@@ -88,6 +88,7 @@ pub fn pdf_to_images(
     logs: State<'_, LogBufferState>,
     options: PdfToImagesOptions,
 ) -> Result<Vec<String>, AppError> {
+    let start = std::time::Instant::now();
     let in_buf = PathBuf::from(&options.input_path);
     let out_dir = PathBuf::from(&options.output_dir);
     let orig_bytes = std::fs::metadata(&in_buf).map(|m| m.len()).unwrap_or(0);
@@ -100,6 +101,12 @@ pub fn pdf_to_images(
         &out_dir,
         options.filename_prefix.as_deref(),
     )?;
+    let exported_bytes: u64 = files
+        .iter()
+        .filter_map(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .sum();
+    let duration_ms = start.elapsed().as_millis() as u64;
 
     push_and_emit_log(
         &app,
@@ -125,9 +132,9 @@ pub fn pdf_to_images(
         "convert",
         &format!("PDF -> {} ({} DPI)", options.format.to_uppercase(), options.dpi),
         orig_bytes,
-        orig_bytes,
+        exported_bytes,
         false,
-        120,
+        duration_ms,
         &options.output_dir,
     )?;
 

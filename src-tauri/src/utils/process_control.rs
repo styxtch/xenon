@@ -78,6 +78,16 @@ impl ProcessRegistry {
         unsafe {
             nt_suspend_or_resume(entry.pid, true)?;
         }
+        #[cfg(unix)]
+        {
+            let status = std::process::Command::new("kill")
+                .args(["-STOP", &entry.pid.to_string()])
+                .status()
+                .map_err(|e| format!("Failed to pause process {}: {e}", entry.pid))?;
+            if !status.success() {
+                return Err(format!("kill -STOP failed for pid {}", entry.pid));
+            }
+        }
         entry.paused = true;
         Ok(true)
     }
@@ -93,6 +103,16 @@ impl ProcessRegistry {
         #[cfg(target_os = "windows")]
         unsafe {
             nt_suspend_or_resume(entry.pid, false)?;
+        }
+        #[cfg(unix)]
+        {
+            let status = std::process::Command::new("kill")
+                .args(["-CONT", &entry.pid.to_string()])
+                .status()
+                .map_err(|e| format!("Failed to resume process {}: {e}", entry.pid))?;
+            if !status.success() {
+                return Err(format!("kill -CONT failed for pid {}", entry.pid));
+            }
         }
         entry.paused = false;
         Ok(true)
@@ -119,6 +139,18 @@ impl ProcessRegistry {
                     return Err("TerminateJobObject failed".to_string());
                 }
             }
+        }
+        #[cfg(unix)]
+        {
+            if entry.paused {
+                let _ = std::process::Command::new("kill")
+                    .args(["-CONT", &entry.pid.to_string()])
+                    .status();
+                entry.paused = false;
+            }
+            let _ = std::process::Command::new("kill")
+                .args(["-KILL", &entry.pid.to_string()])
+                .status();
         }
         Ok(true)
     }
@@ -178,25 +210,29 @@ unsafe fn nt_suspend_or_resume(pid: u32, suspend: bool) -> Result<(), String> {
         return Err(format!("OpenProcess(PROCESS_SUSPEND_RESUME) failed for pid {}", pid));
     }
 
-    let ntdll = libloading::Library::new("ntdll.dll")
-        .map_err(|e| format!("Failed to load ntdll.dll: {}", e))?;
-    let symbol_name: &[u8] = if suspend {
-        b"NtSuspendProcess\0"
-    } else {
-        b"NtResumeProcess\0"
-    };
-    let func: libloading::Symbol<
-        unsafe extern "system" fn(windows_sys::Win32::Foundation::HANDLE) -> i32,
-    > = ntdll
-        .get(symbol_name)
-        .map_err(|e| format!("Missing ntdll symbol: {}", e))?;
+    let result = (|| -> Result<(), String> {
+        let ntdll = libloading::Library::new("ntdll.dll")
+            .map_err(|e| format!("Failed to load ntdll.dll: {}", e))?;
+        let symbol_name: &[u8] = if suspend {
+            b"NtSuspendProcess\0"
+        } else {
+            b"NtResumeProcess\0"
+        };
+        let func: libloading::Symbol<
+            unsafe extern "system" fn(windows_sys::Win32::Foundation::HANDLE) -> i32,
+        > = ntdll
+            .get(symbol_name)
+            .map_err(|e| format!("Missing ntdll symbol: {}", e))?;
 
-    let status = func(proc_handle);
+        let status = func(proc_handle);
+        if status < 0 {
+            return Err(format!("NTSTATUS error 0x{:08X}", status as u32));
+        }
+        Ok(())
+    })();
+
     CloseHandle(proc_handle);
-    if status < 0 {
-        return Err(format!("NTSTATUS error 0x{:08X}", status as u32));
-    }
-    Ok(())
+    result
 }
 
 #[cfg(test)]

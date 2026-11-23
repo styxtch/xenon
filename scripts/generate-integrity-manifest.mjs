@@ -14,17 +14,31 @@ function sha256File(filePath) {
 
 function collectEntries(dirPath, category) {
   if (!existsSync(dirPath)) return [];
+  const minBytes = category === "icc" ? 100 : 4096;
   const entries = [];
   for (const name of readdirSync(dirPath)) {
     const full = join(dirPath, name);
     const st = statSync(full);
-    if (!st.isFile() || st.size <= 4096) continue;
+    if (!st.isFile() || st.size <= minBytes) continue;
+    const fileName = basename(full);
+    const sha256 = sha256File(full);
     entries.push({
-      fileName: basename(full),
+      fileName,
       category,
       bytes: st.size,
-      sha256: sha256File(full),
+      sha256,
     });
+    if (category === "sidecar") {
+      const m = fileName.match(/^(gs|qpdf)-[^.]+(\.exe)?$/);
+      if (m) {
+        entries.push({
+          fileName: `${m[1]}${m[2] ?? ""}`,
+          category,
+          bytes: st.size,
+          sha256,
+        });
+      }
+    }
   }
   return entries;
 }

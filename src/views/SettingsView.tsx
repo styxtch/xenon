@@ -1,10 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { AppIcon } from "../components/common/AppIcon";
-import { formatBytes, isTauriRuntime, tauriClient } from "../lib/tauriClient";
-import { useDocumentStore } from "../stores/documentStore";
-import { useHistoryStore } from "../stores/historyStore";
-import { useQueueStore } from "../stores/queueStore";
+import { formatBytes, isTauriRuntime } from "../lib/tauriClient";
 import {
   useSettingsStore,
   type SettingsCategoryTab,
@@ -81,32 +78,6 @@ export const SettingsView: React.FC = () => {
   const runDiagnostics = useTelemetryStore((s) => s.runDiagnostics);
   const refreshTelemetry = useTelemetryStore((s) => s.refreshTelemetry);
   const toggleLogsDrawer = useTelemetryStore((s) => s.toggleLogsDrawer);
-  const loadLogs = useTelemetryStore((s) => s.loadLogs);
-  const fetchDashboardMetrics = useHistoryStore((s) => s.fetchDashboardMetrics);
-  const loadDemoSampleDocument = useDocumentStore((s) => s.loadDemoSampleDocument);
-  const clearActiveDocument = useDocumentStore((s) => s.clearActiveDocument);
-
-  const [demoMode, setDemoMode] = useState(false);
-
-  useEffect(() => {
-    void tauriClient.getDemoShowcaseMode().then(setDemoMode);
-  }, []);
-
-  const handleToggleDemoMode = async () => {
-    const next = !demoMode;
-    await tauriClient.setDemoShowcaseMode(next);
-    setDemoMode(next);
-    await fetchDashboardMetrics();
-    await loadLogs();
-    if (next) {
-      await loadDemoSampleDocument();
-    } else {
-      clearActiveDocument();
-      useQueueStore.setState((s) => ({
-        jobs: s.jobs.filter((j) => !j.jobId.startsWith("job-seed-")),
-      }));
-    }
-  };
 
   const showCard = (card: Exclude<SettingsCategoryTab, "all">) =>
     activeTab === "all" || activeTab === card;
@@ -727,19 +698,6 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2 self-stretch md:self-auto justify-end flex-wrap">
-          <button
-            type="button"
-            onClick={() => void handleToggleDemoMode()}
-            className={`px-3 py-1.5 rounded-lg font-body-sm text-body-sm border transition-colors flex items-center gap-1.5 ${
-              demoMode
-                ? "bg-tag-optimize/15 border-tag-optimize/40 text-tag-optimize hover:bg-tag-optimize/25"
-                : "bg-surface-elevated hover:bg-surface-hover border-border-default text-text-secondary hover:text-text-primary"
-            }`}
-            title="Load or clear dummy showcase data for promotional screenshots"
-          >
-            <AppIcon name="visibility" className="w-4 h-4" />
-            <span>{demoMode ? "Disable Demo Data" : "Load Demo Data (Screenshots)"}</span>
-          </button>
           <button
             type="button"
             onClick={() => runDiagnostics()}

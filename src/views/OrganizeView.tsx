@@ -303,7 +303,7 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
                 </span>
               </div>
               <p className="font-body-sm text-body-sm text-text-muted mt-0.5">
-                Active Document:{" "}
+                Active File:{" "}
                 <span className="font-mono-metric text-text-primary font-medium">
                   {subTab === "merge"
                     ? mergeQueue.length > 0
@@ -325,10 +325,10 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-space-sm flex-wrap">
-            {((subTab === "merge" && mergeQueue.length > 0) ||
-              (subTab === "split" && splitPages.length > 0) ||
-              ((subTab === "grid" || subTab === "crop") && pages.length > 0)) && (
+          {((subTab === "merge" && mergeQueue.length > 0) ||
+            (subTab === "split" && splitPages.length > 0) ||
+            ((subTab === "grid" || subTab === "crop") && pages.length > 0)) && (
+            <div className="flex items-center gap-space-sm flex-wrap">
               <button
                 type="button"
                 onClick={
@@ -342,28 +342,28 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover text-text-secondary border border-border-default hover:border-status-danger/50 hover:text-error font-body-sm text-body-sm transition-colors"
               >
                 <AppIcon name="close" className="w-4 h-4" />
-                <span>Close File</span>
+                <span>{subTab === "merge" && mergeQueue.length > 1 ? "Clear All" : "Remove File"}</span>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() =>
-                subTab === "merge" || subTab === "split"
-                  ? void handleInsertDocumentsOrImages()
-                  : onOpenFiles()
-              }
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default font-body-sm text-body-sm font-medium transition-colors"
-            >
-              <AppIcon name="description" className="w-4 h-4 text-tag-organize" />
-              <span>
-                {subTab === "split"
-                  ? "Select PDF"
-                  : subTab === "merge"
-                    ? "Select PDFs"
-                    : "Select PDF / Images"}
-              </span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() =>
+                  subTab === "merge" || subTab === "split"
+                    ? void handleInsertDocumentsOrImages()
+                    : onOpenFiles()
+                }
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover text-text-primary border border-border-default font-body-sm text-body-sm font-medium transition-colors"
+              >
+                <AppIcon name="file_open" className="w-4 h-4 text-tag-organize" />
+                <span>
+                  {subTab === "split"
+                    ? "Select PDF"
+                    : subTab === "merge"
+                      ? "Select PDFs"
+                      : "Select PDF / Images"}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-space-md pt-2 border-t border-border-subtle">
@@ -648,7 +648,16 @@ export const OrganizeView: React.FC<OrganizeViewProps> = ({ onOpenFiles }) => {
                   {selectedCount} page(s) targeted
                 </span>
               </div>
-              <VisualPageGrid onInsertFiles={handleInsertDocumentsOrImages} />
+              {pages.length === 0 ? (
+                <DropZoneWell
+                  title="Drop PDF or image files here, or click to open (Ctrl+O)"
+                  subtitle="Load a document first to adjust CropBox margins and page orientation."
+                  onSelectFiles={onOpenFiles}
+                  accentClass="text-tag-organize"
+                />
+              ) : (
+                <VisualPageGrid onInsertFiles={handleInsertDocumentsOrImages} />
+              )}
             </div>
           )}
         </div>

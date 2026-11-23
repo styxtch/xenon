@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-21T05:01:56.839Z",
+  "generatedAt": "2026-11-23T01:58:57.317Z",
   "algorithm": "sha256",
   "files": {
     "gs-x86_64-pc-windows-msvc.exe": {
@@ -8,7 +8,17 @@
       "bytes": 93696,
       "sha256": "3741f8883c0d4ea8a75c44db982be966aeca72d966e92f1d8921cc917654d3df"
     },
+    "gs.exe": {
+      "category": "sidecar",
+      "bytes": 93696,
+      "sha256": "3741f8883c0d4ea8a75c44db982be966aeca72d966e92f1d8921cc917654d3df"
+    },
     "qpdf-x86_64-pc-windows-msvc.exe": {
+      "category": "sidecar",
+      "bytes": 19456,
+      "sha256": "1bdaf878f37eaffea1ea3c30591214c77636a0f2fc7432427516b6e22e36c0ff"
+    },
+    "qpdf.exe": {
       "category": "sidecar",
       "bytes": 19456,
       "sha256": "1bdaf878f37eaffea1ea3c30591214c77636a0f2fc7432427516b6e22e36c0ff"
@@ -77,6 +87,11 @@
       "category": "tessdata",
       "bytes": 1122661,
       "sha256": "69786901da87ab8766c1ea7fbb10b28f2110c14da3f6c8f2735df131fba95d88"
+    },
+    "sRGB.icc": {
+      "category": "icc",
+      "bytes": 2576,
+      "sha256": "eddaf344b5edea13269e0d20055f335610e5e0b6e33e6e536f2701bc18c5f7d5"
     }
   }
 }

@@ -295,8 +295,8 @@ export const PdfCompareViewer: React.FC = () => {
                 <span
                   className={`font-mono-metric text-caption px-2 py-0.5 rounded border ${
                     page.pixelDifferenceRatio > 0
-                      ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                      : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                      ? "bg-tag-optimize/10 text-tag-optimize border-tag-optimize/30"
+                      : "bg-status-success/10 text-status-success border-status-success/30"
                   }`}
                 >
                   {(page.pixelDifferenceRatio * 100).toFixed(1)}% visual delta
@@ -391,9 +391,9 @@ export const PdfCompareViewer: React.FC = () => {
                         key={idx}
                         className={
                           chunk.changeType === "insert"
-                            ? "px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                            ? "px-1.5 py-0.5 rounded bg-status-success/20 text-status-success border border-status-success/30"
                             : chunk.changeType === "delete"
-                              ? "px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 line-through border border-red-500/30"
+                              ? "px-1.5 py-0.5 rounded bg-status-danger/20 text-status-danger line-through border border-status-danger/30"
                               : "text-text-secondary"
                         }
                       >

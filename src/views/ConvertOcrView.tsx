@@ -198,7 +198,7 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
 
       if (subTab === "img2pdf") {
         if (images.length > 0) {
-          addConvertImagePaths(images);
+          addToolFiles(imgToolKey, images);
           setResultMessage(null);
           setErrorMessage(null);
         }
@@ -206,17 +206,17 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
       }
 
       if (pdfs.length > 0) {
-        setConvertPdfPath(pdfs[0]);
+        setToolFiles(pdfToolKey, [pdfs[0]]);
         setResultMessage(null);
         setErrorMessage(null);
       } else if (images.length > 0) {
         setSubTab("img2pdf");
-        addConvertImagePaths(images);
+        addToolFiles(imgToolKey, images);
         setResultMessage(null);
         setErrorMessage(null);
       }
     }, hint);
-  }, [subTab, setConvertPdfPath, addConvertImagePaths]);
+  }, [subTab, pdfToolKey, setToolFiles, addToolFiles]);
 
   const handlePickInputs = async () => {
     if (!isTauriRuntime()) {
@@ -443,11 +443,7 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
                 </span>
               </div>
               <p className="font-body-sm text-body-sm text-text-muted mt-0.5">
-                {subTab === "img2pdf"
-                  ? "Selected Images: "
-                  : subTab === "compare"
-                    ? "Compare Pair: "
-                    : "Active PDF: "}
+                Active File:{" "}
                 <span className="font-mono-metric text-text-primary">
                   {subTab === "img2pdf"
                     ? convertImagePaths.length > 0
@@ -476,7 +472,7 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
                 <span>Remove Files</span>
               </button>
             )
-          ) : (
+          ) : (hasActiveInput || subTab === "forms") ? (
             <div className="flex items-center gap-2 flex-wrap">
               {hasActiveInput && (
                 <button
@@ -493,41 +489,50 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
                 onClick={() => void handlePickInputs()}
                 className="px-3.5 py-2 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border-default text-text-primary font-body-sm text-body-sm flex items-center gap-1.5"
               >
-                <AppIcon name="file_open" className="w-4 h-4 text-primary" />
+                <AppIcon name="file_open" className="w-4 h-4 text-tag-convert" />
                 <span>{subTab === "img2pdf" ? "Select Images" : "Select PDF"}</span>
               </button>
             </div>
-          )}
+          ) : null}
         </div>
 
-        <div className="inline-flex p-1 bg-surface-elevated rounded-lg border border-border-subtle self-start flex-wrap">
-          {(
-            [
-              { id: "pdf2img", label: "PDF to Images" },
-              { id: "img2pdf", label: "Images to PDF" },
-              { id: "ocr", label: "OCR Searchable PDF" },
-              { id: "pdfa", label: "PDF/A Archival" },
-              { id: "compare", label: "Compare PDFs" },
-              { id: "forms", label: "Form Editor" },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => {
-                setSubTab(tab.id);
-                setResultMessage(null);
-                setErrorMessage(null);
-              }}
-              className={`px-3 py-1.5 rounded-md font-body-sm text-body-sm transition-colors ${
-                subTab === tab.id
-                  ? "bg-surface-active text-text-primary font-medium"
-                  : "text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-space-md pt-2 border-t border-border-subtle">
+          <div className="inline-flex p-1 bg-surface-elevated rounded-lg border border-border-subtle flex-wrap">
+            {(
+              [
+                { id: "pdf2img", label: "PDF to Images", icon: "image" },
+                { id: "img2pdf", label: "Images to PDF", icon: "layers" },
+                { id: "ocr", label: "OCR Searchable PDF", icon: "search" },
+                { id: "pdfa", label: "PDF/A Archival", icon: "verified" },
+                { id: "compare", label: "Compare PDFs", icon: "difference" },
+                { id: "forms", label: "Form Editor", icon: "edit" },
+              ] as const
+            ).map((tab) => {
+              const active = subTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setSubTab(tab.id);
+                    setResultMessage(null);
+                    setErrorMessage(null);
+                  }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-body-sm text-body-sm transition-all ${
+                    active
+                      ? "bg-surface-active text-text-primary font-medium shadow-sm"
+                      : "text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  <AppIcon
+                    name={tab.icon}
+                    className={`w-4 h-4 ${active ? "text-tag-convert" : ""}`}
+                  />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -567,7 +572,11 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
                     ? "Drag & drop JPG, PNG, WebP, TIFF, or BMP images, or click to select"
                     : "Drag & drop a PDF file here, or click to select for conversion or OCR"
                 }
-                subtitle="Files added here stay independent from Organize PDF Workspace."
+                subtitle={
+                  subTab === "img2pdf"
+                    ? "Drag & drop from Windows Explorer or click to browse JPG, PNG, WebP, TIFF, or BMP images."
+                    : "Drag & drop from Windows Explorer or click to browse a PDF document (processed 100% offline)."
+                }
                 onSelectFiles={() => void handlePickInputs()}
                 accentClass="text-tag-convert"
               />
@@ -744,7 +753,7 @@ export const ConvertOcrView: React.FC<ConvertOcrViewProps> = ({
                 <span>
                   {isExecuting
                     ? "Processing Offline..."
-                    : "Execute Conversion (Ctrl+E)"}
+                    : "Execute Conversion"}
                 </span>
               </button>
             </OutputTargetCard>
