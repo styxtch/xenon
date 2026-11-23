@@ -123,7 +123,7 @@ jobs:
       - name: Cache standalone Ghostscript 10.05.1 with Tesseract OCR (Unix)
         if: matrix.platform != 'windows-latest'
         id: cache-gs
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .gs-cache/gs
           key: gs-10.05.1-${{ matrix.target }}
