@@ -17,8 +17,10 @@ jobs:
         include:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-          # Re-enable macOS & Linux targets once real binaries and src-tauri/icons/icon.icns
-          # replace the ~70-byte placeholder stubs in src-tauri/binaries & src-tauri/resources/lib.
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.platform }}
 
@@ -37,11 +39,127 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install Linux Tauri dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+      - name: Prepare Windows bundled libraries
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          Remove-Item -Force -ErrorAction SilentlyContinue src-tauri/resources/lib/libpdfium.dylib, src-tauri/resources/lib/libpdfium.so
+
+      - name: Install Linux Tauri & build dependencies
+        if: matrix.platform == 'ubuntu-24.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            build-essential \
+            pkg-config \
+            zlib1g-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libtiff-dev \
+            libfreetype6-dev \
+            libfontconfig1-dev \
+            unzip \
+            curl
+
+      - name: Prepare macOS native engines (PDFium & QPDF)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          set -euo pipefail
+          rm -f src-tauri/resources/lib/*.dll src-tauri/resources/lib/libpdfium.so
+
+          mkdir -p /tmp/pdfium
+          curl -fL "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-mac-arm64.tgz" -o /tmp/pdfium.tgz
+          tar -xzf /tmp/pdfium.tgz -C /tmp/pdfium
+          cp -L /tmp/pdfium/lib/libpdfium.dylib src-tauri/resources/lib/libpdfium.dylib
+          chmod +x src-tauri/resources/lib/libpdfium.dylib
+
+          rm -rf /tmp/qpdf && mkdir -p /tmp/qpdf
+          if curl -fL "https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-bin-macos-arm64.zip" -o /tmp/qpdf.zip; then
+            unzip -q /tmp/qpdf.zip -d /tmp/qpdf
+            QPDF_ROOT=$(find /tmp/qpdf -maxdepth 2 -type d -name "bin" -exec dirname {} \; | head -n1)
+            cp -L "$QPDF_ROOT/bin/qpdf" src-tauri/binaries/qpdf-aarch64-apple-darwin
+            find "$QPDF_ROOT/lib" -maxdepth 1 -name "*.dylib*" -exec cp -L {} src-tauri/resources/lib/ \;
+          else
+            brew install qpdf
+            QPDF_ROOT=$(brew --prefix qpdf)
+            cp -L "$QPDF_ROOT/bin/qpdf" src-tauri/binaries/qpdf-aarch64-apple-darwin
+            find "$QPDF_ROOT/lib" -maxdepth 1 -name "libqpdf*.dylib*" -exec cp -L {} src-tauri/resources/lib/ \;
+          fi
+          chmod +x src-tauri/binaries/qpdf-aarch64-apple-darwin
+          install_name_tool -add_rpath "@executable_path/../Resources/resources/lib" src-tauri/binaries/qpdf-aarch64-apple-darwin || true
+          install_name_tool -add_rpath "@executable_path/../resources/lib" src-tauri/binaries/qpdf-aarch64-apple-darwin || true
+          xattr -cr src-tauri/binaries/qpdf-aarch64-apple-darwin src-tauri/resources/lib/ || true
+
+      - name: Prepare Linux native engines (PDFium & QPDF)
+        if: matrix.platform == 'ubuntu-24.04'
+        run: |
+          set -euo pipefail
+          rm -f src-tauri/resources/lib/*.dll src-tauri/resources/lib/libpdfium.dylib
+
+          mkdir -p /tmp/pdfium
+          curl -fL "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz" -o /tmp/pdfium.tgz
+          tar -xzf /tmp/pdfium.tgz -C /tmp/pdfium
+          cp -L /tmp/pdfium/lib/libpdfium.so src-tauri/resources/lib/libpdfium.so
+          chmod +x src-tauri/resources/lib/libpdfium.so
+
+          rm -rf /tmp/qpdf && mkdir -p /tmp/qpdf
+          if curl -fL "https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-bin-linux-x86_64.zip" -o /tmp/qpdf.zip; then
+            unzip -q /tmp/qpdf.zip -d /tmp/qpdf
+            QPDF_ROOT=$(find /tmp/qpdf -maxdepth 2 -type d -name "bin" -exec dirname {} \; | head -n1)
+            cp -L "$QPDF_ROOT/bin/qpdf" src-tauri/binaries/qpdf-x86_64-unknown-linux-gnu
+            find "$QPDF_ROOT/lib" -maxdepth 1 -name "*.so*" -exec cp -L {} src-tauri/resources/lib/ \;
+          else
+            sudo apt-get install -y qpdf
+            cp -L "$(which qpdf)" src-tauri/binaries/qpdf-x86_64-unknown-linux-gnu
+            ldd "$(which qpdf)" | awk '/libqpdf/ && /=>/ {print $3}' | xargs -r -I{} cp -L {} src-tauri/resources/lib/
+          fi
+          chmod +x src-tauri/binaries/qpdf-x86_64-unknown-linux-gnu
+          patchelf --set-rpath '$ORIGIN:$ORIGIN/../lib:$ORIGIN/../lib/XENON/resources/lib' src-tauri/binaries/qpdf-x86_64-unknown-linux-gnu
+
+      - name: Cache standalone Ghostscript 10.05.1 with Tesseract OCR (Unix)
+        if: matrix.platform != 'windows-latest'
+        id: cache-gs
+        uses: actions/cache@v4
+        with:
+          path: .gs-cache/gs
+          key: gs-10.05.1-${{ matrix.target }}
+
+      - name: Build standalone Ghostscript 10.05.1 with Tesseract OCR (Unix)
+        if: matrix.platform != 'windows-latest' && steps.cache-gs.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fL "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.xz" -o /tmp/gs.tar.xz
+          tar -xf /tmp/gs.tar.xz -C /tmp
+          cd /tmp/ghostscript-10.05.1
+          ./configure \
+            --without-x \
+            --disable-cups \
+            --disable-gtk \
+            --with-tesseract \
+            --disable-dbus \
+            --without-libpaper \
+            --without-libidn \
+            --enable-compile-inits
+          if [ "$(uname -s)" = "Darwin" ]; then
+            make -j"$(sysctl -n hw.ncpu)"
+          else
+            make -j"$(nproc)"
+          fi
+          mkdir -p "${GITHUB_WORKSPACE}/.gs-cache"
+          cp bin/gs "${GITHUB_WORKSPACE}/.gs-cache/gs"
+          chmod +x "${GITHUB_WORKSPACE}/.gs-cache/gs"
+
+      - name: Install cached Ghostscript sidecar (Unix)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          set -euo pipefail
+          cp .gs-cache/gs "src-tauri/binaries/gs-${{ matrix.target }}"
+          chmod +x "src-tauri/binaries/gs-${{ matrix.target }}"
+          "src-tauri/binaries/gs-${{ matrix.target }}" -h | grep -q "pdfocr24"
 
       - name: Install frontend dependencies
         run: npm ci
@@ -49,20 +167,21 @@ jobs:
       - name: Build & typecheck frontend
         run: npm run build
 
-      - name: Run Rust core & integrity tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
       - name: Generate SHA-256 binary integrity manifest
         run: node scripts/generate-integrity-manifest.mjs
+
+      - name: Run Rust core & integrity tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build Tauri installers (${{ matrix.target }})
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NO_STRIP: "true"
         with:
           tagName: v__VERSION__
           releaseName: "XENON v__VERSION__"
-          releaseBody: "100% Offline Private PDF Workspace — Bundled Installers & SHA-256 Checksums"
+          releaseBody: "100% Offline Private PDF Workspace — Windows, macOS (Apple Silicon) & Linux Installers"
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}

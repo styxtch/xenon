@@ -73,13 +73,14 @@ XENON is a 100% offline, open-source desktop PDF workstation built with **Tauri 
 
 ### End Users (Pre-built Installer)
 
-1. Go to the [**GitHub Releases**](../../releases) page and download the latest Windows installer:
-   - **`XENON_x.x.x_x64-setup.exe`** (NSIS Installer) or
-   - **`XENON_x.x.x_x64_en-US.msi`** (Windows MSI Installer)
-2. Run the installer and launch **XENON** — all PDF engines (`PDFium`, `QPDF`, `Ghostscript`, and `tessdata`) are already bundled inside.
-3. **Windows SmartScreen note**: Because installers are currently unsigned open-source builds, Windows Defender SmartScreen may display a prompt on first launch; click **More info → Run anyway** if you verified the release checksum from GitHub Releases.
-
-> **macOS & Linux:** Pre-built GitHub Release CI currently targets `windows-latest` while non-Windows engine binaries are finalized. macOS/Linux users can build directly from source using the steps below once platform binaries are supplied.
+1. Go to the [**GitHub Releases**](../../releases) page and download the installer for your operating system:
+   - **Windows (x64):** `XENON_x.x.x_x64-setup.exe` (NSIS Installer) or `XENON_x.x.x_x64_en-US.msi` (MSI Installer)
+   - **macOS (Apple Silicon / ARM64):** `XENON_x.x.x_aarch64.dmg`
+   - **Linux (x64):** `XENON_x.x.x_amd64.AppImage`, `XENON_x.x.x_amd64.deb`, or `.rpm`
+2. Run the installer and launch **XENON** — all PDF engines (`PDFium`, `QPDF`, `Ghostscript` + Tesseract OCR, and `tessdata`) are bundled directly inside the application.
+3. **Security prompt notes (unsigned open-source builds):**
+   - **Windows SmartScreen:** Click **More info → Run anyway** after verifying the release checksum.
+   - **macOS Gatekeeper:** Because open-source builds are not notarized with an Apple Developer ID, drag XENON to Applications and run `xattr -cr /Applications/XENON.app` (or allow in **System Settings → Privacy & Security → Open Anyway**) if macOS reports the app cannot be verified.
 
 ---
 

@@ -167,9 +167,22 @@ pub fn build_sidecar_command(bin: &Path, paths: &EnginePaths) -> Command {
     }
 
     if cfg!(target_os = "linux") {
-        cmd.env("LD_LIBRARY_PATH", &paths.lib_dir);
+        let mut ld_entries = vec![paths.lib_dir.clone()];
+        if let Some(existing) = std::env::var_os("LD_LIBRARY_PATH") {
+            ld_entries.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(joined) = std::env::join_paths(ld_entries) {
+            cmd.env("LD_LIBRARY_PATH", joined);
+        }
     } else if cfg!(target_os = "macos") {
-        cmd.env("DYLD_LIBRARY_PATH", &paths.lib_dir);
+        let mut dyld_entries = vec![paths.lib_dir.clone()];
+        if let Some(existing) = std::env::var_os("DYLD_LIBRARY_PATH") {
+            dyld_entries.extend(std::env::split_paths(&existing));
+        }
+        if let Ok(joined) = std::env::join_paths(dyld_entries) {
+            cmd.env("DYLD_LIBRARY_PATH", &joined);
+            cmd.env("DYLD_FALLBACK_LIBRARY_PATH", joined);
+        }
     }
     cmd.env("TESSDATA_PREFIX", &paths.tessdata_dir);
     cmd
